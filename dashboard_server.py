@@ -14,7 +14,7 @@ import uvicorn
 app = FastAPI(title="KHABAR Dashboard")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-DASHBOARD_HTML = """<!DOCTYPE html>
+DASHBOARD_HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -210,6 +210,7 @@ header{background:rgba(3, 7, 18, 0.8);backdrop-filter:blur(12px);padding:16px 32
         <div class="agent-connector"></div>
         <div class="agent-step"><div class="agent-circle">⚡</div><div class="agent-label">Execution</div></div>
       </div>
+      <div id="verification-banner"></div>
       <div class="trace-list" id="trace-list">
         <div class="no-data">Select an incident from the queue to view trace logs</div>
       </div>
@@ -427,6 +428,19 @@ function renderDetail(inc){
     </div>
     ${i<steps.length-1?`<div class="agent-connector ${s.done?'done':''}"></div>`:''}
   `).join('');
+
+  // Verification status banner
+  const loc = inc.location || {};
+  const isVerified = loc.is_verified !== false && inc.status !== 'REJECTED';
+  const vReason = loc.verification_reason || 'Report authenticity successfully verified.';
+  document.getElementById('verification-banner').innerHTML = `
+    <div style="margin-bottom:16px;padding:12px 16px;border-radius:12px;border:1px solid ${isVerified?'rgba(0,230,118,0.2)':'rgba(255,51,102,0.3)'};background:${isVerified?'rgba(0,230,118,0.05)':'rgba(255,51,102,0.05)'}">
+      <div style="font-size:11px;font-weight:800;color:${isVerified?'var(--green)':'var(--red)'};text-transform:uppercase;letter-spacing:1px;display:flex;align-items:center;gap:6px">
+        ${isVerified?'🛡️ Verified Crisis Signal':'⚠️ Suspicious / Spam Report Flagged'}
+      </div>
+      <div style="font-size:12px;color:#cbd5e1;margin-top:4px;line-height:1.4">${vReason}</div>
+    </div>
+  `;
 
   // Traces
   const traceEl = document.getElementById('trace-list');
