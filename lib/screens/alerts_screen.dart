@@ -186,7 +186,8 @@ class _AlertsScreenState extends State<AlertsScreen> {
     try {
       const apiKey = 'e1310da5ab09d0c4bfb32e0bfc5e514c8c3a29248d2173eb666546c34fc4ca5c';
       final String region = LanguageProvider().region.split(',').first.trim();
-      final url = Uri.parse('https://serpapi.com/search.json?engine=google_news&q=${Uri.encodeComponent(region)}+Local+News&api_key=$apiKey');
+      // Added crisis-focused keywords and 'when:7d' constraint to ensure outdated news isn't returned
+      final url = Uri.parse('https://serpapi.com/search.json?engine=google_news&q=${Uri.encodeComponent(region)}+(emergency+OR+accident+OR+rain+OR+flood+OR+protest+OR+alert)+when:7d&api_key=$apiKey');
       
       final response = await http.get(url).timeout(const Duration(seconds: 10));
 
@@ -236,8 +237,9 @@ class _AlertsScreenState extends State<AlertsScreen> {
 
   Future<void> _fetchRssBackup() async {
     try {
+      final String region = LanguageProvider().region.split(',').first.trim();
       final url = Uri.parse(
-        'https://news.google.com/rss/search?q=pakistan%20(emergency%20OR%20floods%20OR%20rain%20OR%20weather%20OR%20crisis%20OR%20disaster)&hl=en-PK&gl=PK&ceid=PK:en',
+        'https://news.google.com/rss/search?q=${Uri.encodeComponent(region)}%20(emergency%20OR%20floods%20OR%20rain%20OR%20weather%20OR%20crisis%20OR%20disaster)%20when:7d&hl=en-PK&gl=PK&ceid=PK:en',
       );
       final response = await http.get(url).timeout(const Duration(seconds: 8));
 

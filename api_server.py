@@ -715,10 +715,10 @@ async def get_live_news():
     try:
         from serpapi import GoogleSearch
         
-        # Enforce search query targeting rain, floods, WASA, Rescue 1122 and warnings in twin cities
+        # Enforce search query targeting rain, floods, WASA, Rescue 1122 and warnings in twin cities with last 7 days constraint
         search = GoogleSearch({
             "engine": "google_news",
-            "q": "Islamabad Rawalpindi rain flood WASA OR Rescue 1122 OR alert",
+            "q": "Islamabad Rawalpindi rain flood WASA OR Rescue 1122 OR alert when:7d",
             "gl": "pk",
             "hl": "en",
             "api_key": "e1310da5ab09d0c4bfb32e0bfc5e514c8c3a29248d2173eb666546c34fc4ca5c"

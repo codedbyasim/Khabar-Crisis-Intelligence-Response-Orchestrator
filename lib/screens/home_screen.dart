@@ -68,7 +68,7 @@ class _HomeScreenState extends State<HomeScreen>
     try {
       const apiKey = 'e1310da5ab09d0c4bfb32e0bfc5e514c8c3a29248d2173eb666546c34fc4ca5c';
       final String region = LanguageProvider().region.split(',').first.trim();
-      final url = 'https://serpapi.com/search.json?engine=google_news&q=${Uri.encodeComponent(region)}+Emergency+News&api_key=$apiKey';
+      final url = 'https://serpapi.com/search.json?engine=google_news&q=${Uri.encodeComponent(region)}+(emergency+OR+accident+OR+rain+OR+flood+OR+protest+OR+alert)+when:7d&api_key=$apiKey';
       final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 8));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
