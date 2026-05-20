@@ -105,7 +105,7 @@ class _MapScreenState extends State<MapScreen> {
     
     if (permission == LocationPermission.deniedForever) return;
 
-    final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+    final position = await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.high));
     if (mounted) {
       setState(() {
         _currentPosition = position;
@@ -405,9 +405,13 @@ class _MapScreenState extends State<MapScreen> {
         final String resId = r['resource_id'] ?? DateTime.now().millisecondsSinceEpoch.toString();
         
         double hue = BitmapDescriptor.hueViolet;
-        if (type.toLowerCase() == 'ambulance') hue = BitmapDescriptor.hueRose;
-        else if (type.toLowerCase() == 'fire_truck') hue = BitmapDescriptor.hueOrange;
-        else if (type.toLowerCase() == 'rescue_team') hue = BitmapDescriptor.hueCyan;
+        if (type.toLowerCase() == 'ambulance') {
+          hue = BitmapDescriptor.hueRose;
+        } else if (type.toLowerCase() == 'fire_truck') {
+          hue = BitmapDescriptor.hueOrange;
+        } else if (type.toLowerCase() == 'rescue_team') {
+          hue = BitmapDescriptor.hueCyan;
+        }
 
         markers.add(
           Marker(
@@ -424,16 +428,6 @@ class _MapScreenState extends State<MapScreen> {
     }
 
     // 3. Add dynamic Backend Incidents (P1 Crisis, P3 Urgent)
-    if (_showCrisisMarkers) {
-                    urduSubtitle: 'توقع: 3 گھنٹے۔',
-                  ),
-                ],
-              );
-            });
-          },
-        ),
-      );
-    }
 
     // Dynamic search marker if any
     if (_searchedMarker != null) {
