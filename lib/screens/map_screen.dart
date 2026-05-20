@@ -464,17 +464,35 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Set<Polyline> _createPolylines() {
-    // Green/Teal dotted rerouting line matching the reference UI
-    final points = [
-      const LatLng(33.7380, 73.0350), // Saidpur/Khyber border side
-      const LatLng(33.7220, 73.0580), // Jinnah Ave incident
-      const LatLng(33.7120, 73.0680), // Blue Area side
+    if (_realIncidents.isEmpty) return {};
+    
+    // Dynamic mock route generation relative to the active incident's position
+    final basePos = _activeIncident.position;
+    
+    // Closed road (Red Line) - represents the blocked arterial route
+    final closedRoadPoints = [
+      LatLng(basePos.latitude - 0.005, basePos.longitude - 0.005),
+      basePos, // Center of incident
+      LatLng(basePos.latitude + 0.005, basePos.longitude + 0.005),
+    ];
+    
+    // Detour route (Green Dotted Line) - represents the alternate corridor
+    final detourPoints = [
+      LatLng(basePos.latitude - 0.005, basePos.longitude - 0.005),
+      LatLng(basePos.latitude - 0.002, basePos.longitude + 0.008), // Detour curve
+      LatLng(basePos.latitude + 0.005, basePos.longitude + 0.005),
     ];
 
     return {
       Polyline(
+        polylineId: const PolylineId('closed_road'),
+        points: closedRoadPoints,
+        color: kEmergencyRed.withValues(alpha: 0.8),
+        width: 6,
+      ),
+      Polyline(
         polylineId: const PolylineId('reroute_corridor'),
-        points: points,
+        points: detourPoints,
         color: const Color(0xFF0F5B5C),
         width: 4,
         patterns: [PatternItem.dash(15), PatternItem.gap(12)],

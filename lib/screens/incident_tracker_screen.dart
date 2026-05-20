@@ -465,6 +465,34 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
                   Expanded(child: _buildStateBox('AFTER', after, changedKeys, true)),
                 ],
               ),
+              if (_effectiveData?['generated_alerts'] != null && (_effectiveData!['generated_alerts'] as List).isNotEmpty) ...[
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.campaign, color: Colors.orange, size: 20),
+                    const SizedBox(width: 8),
+                    Text('Public Alerts Generated:',
+                        style: GoogleFonts.nunito(
+                            fontSize: 13, fontWeight: FontWeight.bold, color: Colors.orange.shade700)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                  ),
+                  child: Text(
+                    (_effectiveData!['generated_alerts'] as List).first.toString(),
+                    style: GoogleFonts.nunito(fontSize: 12, color: kTextDark),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

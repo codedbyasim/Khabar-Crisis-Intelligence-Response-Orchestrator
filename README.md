@@ -60,6 +60,13 @@ Our platform orchestrates four specialized agents in a linear workflow, passing 
 
 ---
 
+## 📸 3. Multi-Source Input Pipelines (Voice & Photo)
+*   **Voice Reporting:** Citizens can submit raw audio via the mobile app. The audio is sent directly to the `gemini-3.1-flash` native audio API, which accurately transcribes regional languages like Urdu and Punjabi into actionable text.
+*   **Photo Verification:** Citizens can snap photos of an emerging crisis. The image is analyzed by `gemini-3.1-pro-vision` to verify the severity (e.g., measuring water levels, structural damage) before being ingested into the pipeline.
+*   **Text Processing:** Fully capable of understanding "Roman Urdu" (e.g., *G-10 mein pani bhar gaya hai*) natively through Gemini.
+
+---
+
 ## 🛠️ 3. Real-world Agentic Tool Functions
 
 The **Execution Agent** uses Google Antigravity's tool-calling interface to execute these functions:
@@ -73,7 +80,24 @@ The **Execution Agent** uses Google Antigravity's tool-calling interface to exec
 
 ---
 
-## 📊 4. Real-time Live Web Dashboard
+## 📊 5. Outcome Visualization & Simulations
+
+To fully satisfy the simulation requirements of the challenge, KHABAR implements deep real-time UI simulations:
+*   **Before vs After Impact Panel:** Inside the `IncidentTrackerScreen`, users can see the exact numerical difference in deployed units, rerouted roads, and emergency tickets before and after the Execution Agent completes its plan.
+*   **Dynamic Map Route Simulation:** When an incident triggers a traffic reroute, the `MapScreen` actively generates and visualizes mock map routes (a red line for the closed arterial road, and a green dotted corridor for the generated detour) dynamically centered around the incident's GPS coordinates.
+*   **System Reasoning Logs:** The complete end-to-end trace logs of all four agents (including their tool calls) are beautifully rendered in the Flutter timeline.
+
+---
+
+## 🔔 6. Real-time Live Notifications (FCM)
+
+KHABAR integrates Firebase Cloud Messaging (FCM) to satisfy the alerting requirement:
+*   **In-App Alerts:** When an automated alert tool is executed by the agent, a foreground red warning dialog pops up containing a bilingual summary.
+*   **Deep Linking:** Tapping on a background notification instantly routes the user to the `AlertsScreen` to view the comprehensive crisis report.
+
+---
+
+## 📊 7. Real-time Live Web Dashboard
 
 Built with FastAPI and a modern HTML/CSS interface, the **Web Dashboard** (`dashboard_server.py`) features:
 *   **Before vs After Comparisons:** Live dynamic state tables showing exact route changes and dispatch confirmations.
@@ -121,8 +145,15 @@ flutter run
 
 ---
 
-## 🏆 6. Key Innovations & Highlights
+## 🏆 9. Key Innovations & Highlights
 *   **Dual Language Audio Pipeline:** Speech inputs are transcribed directly via **Gemini 2.5 Flash Native Audio** supporting raw voice.
 *   **Live Weather Ingestor:** Uses actual, real-time geocoded Open-Meteo forecasts to trigger proactive flood/heatwave emergencies without human input.
 *   **Zero-dependency Neural RAG:** The knowledge base uses a lightweight, highly efficient local Vector DB using cosine similarity over real Gemini Embeddings.
 *   **Production-grade Supabase Integration:** Dropped all database mocks to establish a real-time, persistent PostgreSQL database hosted on Supabase (AWS Tokyo), fully syncing incidents and resources across client sessions.
+
+---
+
+## 📝 10. Assumptions
+1.  **Map Route Simulation:** As LLMs cannot reliably output exact 50+ coordinate polylines for real-world detours, the "mock route generation" visually simulates the detour via an algorithm in the Flutter MapScreen relative to the incident center.
+2.  **Resource API:** It is assumed that the global resource API provides near-real-time data; in absence, the system gracefully falls back to a padded baseline to prevent planning failure.
+3.  **Human-in-the-Loop:** For demonstration, the system auto-proceeds from P5 to P1. In a production environment, P3-P5 events would require human dispatcher confirmation before proceeding to Execution.
