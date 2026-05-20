@@ -229,12 +229,13 @@ async def report_image(
 @app.post("/report/voice")
 async def report_voice(
     audio: UploadFile = File(...),
+    image: Optional[UploadFile] = File(default=None),
     lat: float = Form(default=33.6844),
     lng: float = Form(default=73.0479),
     background_tasks: BackgroundTasks = None,
 ):
     """
-    Submit audio recording for Gemini multilingual transcription.
+    Submit audio recording with optional image for Gemini multilingual transcription & vision analysis.
     FR-03: Supports Urdu, Punjabi, Sindhi, Roman Urdu, English.
     """
     signal_id = f"SIG-{int(datetime.now().timestamp())}-VOI"
@@ -253,6 +254,17 @@ async def report_voice(
             "crisis_type": "unknown",
         }
 
+    # Run optional image analysis
+    vision_result = None
+    if image is not None:
+        try:
+            image_bytes = await image.read()
+            img_mime = image.content_type or "image/jpeg"
+            vision_result = vision.analyze_crisis_image(image_bytes, img_mime)
+        except Exception as e:
+            logging.error(f"Image analysis during voice report failed: {e}")
+            vision_result = {"description": f"Failed to analyze image: {e}"}
+
     # Use English transcription as pipeline input
     transcribed = speech_result.get("transcription_english", "")
     combined = (
@@ -262,12 +274,21 @@ async def report_voice(
         f"Crisis keywords: {', '.join(speech_result.get('crisis_keywords', []))}"
     )
 
+    if vision_result:
+        combined += (
+            f"\n\n[ATTACHED IMAGE ANALYSIS]\n"
+            f"Visual Details: {vision_result.get('description', '')}\n"
+            f"Crisis: {vision_result.get('crisis_type', 'unknown')} | "
+            f"Severity: {vision_result.get('severity', 'unknown')} | "
+            f"Detected: {', '.join(vision_result.get('detected_elements', []))}"
+        )
+
     signal = RawCrisisSignal(
         signal_id=signal_id,
         source_type=InputSourceType.VOICE_TRANSCRIPTION,
         raw_content=combined,
         timestamp=datetime.now(timezone.utc).isoformat(),
-        metadata={"lat": lat, "lng": lng, "speech_result": speech_result},
+        metadata={"lat": lat, "lng": lng, "speech_result": speech_result, "vision_result": vision_result},
     )
 
     background_tasks.add_task(orchestrator.process_incident, signal)
@@ -278,13 +299,14 @@ async def report_voice(
         "status": "PROCESSING",
         "source": "voice",
         "speech_analysis": speech_result,
+        "vision_analysis": vision_result,
         "lat": lat, "lng": lng,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "traces": [
             f"[{datetime.now(timezone.utc).isoformat()}] [SPEECH] Gemini transcribed: "
             f"lang={speech_result.get('detected_language')} | "
             f"crisis={speech_result.get('crisis_detected')} | "
-            f"\"{transcribed[:60]}...\""
+            f"\"{transcribed[:60]}...\"" + (f" | Image Attached and analyzed." if vision_result else "")
         ],
     })
 
@@ -293,6 +315,7 @@ async def report_voice(
         "incident_id": signal_id,
         "status": "PROCESSING",
         "speech_analysis": speech_result,
+        "vision_analysis": vision_result,
         "message": "Audio transcribed by Gemini Speech. AI pipeline started.",
         "poll_url": f"/incident/{signal_id}",
     }

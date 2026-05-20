@@ -27,6 +27,7 @@ class _PhotoVerificationScreenState extends State<PhotoVerificationScreen> {
   Map<String, dynamic>? _visionResult;
   double _lat = 33.6844;
   double _lng = 73.0479;
+  final TextEditingController _descriptionController = TextEditingController();
 
   @override
   void initState() {
@@ -82,6 +83,7 @@ class _PhotoVerificationScreenState extends State<PhotoVerificationScreen> {
   @override
   void dispose() {
     _cameraController?.dispose();
+    _descriptionController.dispose();
     super.dispose();
   }
 
@@ -116,7 +118,9 @@ class _PhotoVerificationScreenState extends State<PhotoVerificationScreen> {
       final String region = LanguageProvider().region;
       request.fields['lat'] = _lat.toString();
       request.fields['lng'] = _lng.toString();
-      request.fields['description'] = 'Photo report from KHABAR app ($region)';
+      request.fields['description'] = _descriptionController.text.isNotEmpty 
+          ? _descriptionController.text 
+          : 'Photo report from KHABAR app ($region)';
 
       final streamed = await request.send();
       final response = await http.Response.fromStream(streamed);
@@ -274,29 +278,84 @@ class _PhotoVerificationScreenState extends State<PhotoVerificationScreen> {
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.auto_awesome, color: kPrimaryTeal, size: 20),
-                            const SizedBox(width: 8),
-                            Text('Gemini Vision Analysis', style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.bold, color: kPrimaryTeal)),
-                            const Spacer(),
-                            Text('Confidence: $confidence', style: GoogleFonts.nunito(fontSize: 12, color: kPrimaryTeal)),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Text('Crisis Type: $crisisType', style: GoogleFonts.nunito(fontSize: 14, color: Colors.black87)),
-                        const SizedBox(height: 4),
-                        Text('Severity: $severity ($priority)', style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.bold, color: kEmergencyRed)),
-                        const SizedBox(height: 4),
-                        Text('Detected: $elements', style: GoogleFonts.nunito(fontSize: 13, color: Colors.black87)),
-                        const SizedBox(height: 6),
-                        Text(description, style: GoogleFonts.nunito(fontSize: 12, color: Colors.black54)),
-                      ],
-                    ),
+                    child: _visionResult == null && !_isSubmitting
+                        ? Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Row(
+                                children: [
+                                  const Icon(Icons.description, color: kPrimaryTeal, size: 20),
+                                  const SizedBox(width: 8),
+                                  Text('Add Text Details', style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.bold, color: kPrimaryTeal)),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              TextField(
+                                controller: _descriptionController,
+                                maxLines: 4,
+                                decoration: InputDecoration(
+                                  hintText: 'Describe the damage or incident details here... (e.g. road blocked, flooded area) / تفصیلات درج کریں...',
+                                  hintStyle: const TextStyle(color: Colors.black54, fontSize: 13),
+                                  fillColor: Colors.white.withValues(alpha: 0.4),
+                                  filled: true,
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                ),
+                                style: const TextStyle(color: Colors.black87, fontSize: 14),
+                              ),
+                              const SizedBox(height: 12),
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  setState(() {
+                                    _capturedImage = null;
+                                  });
+                                },
+                                icon: const Icon(Icons.refresh, size: 16),
+                                label: const Text('Retake Photo'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.black87,
+                                  side: const BorderSide(color: Colors.black38),
+                                ),
+                              ),
+                            ],
+                          )
+                        : _visionResult == null
+                            ? const Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    CircularProgressIndicator(color: kPrimaryTeal),
+                                    SizedBox(height: 16),
+                                    Text('Gemini Vision assessing damage...', style: TextStyle(color: kPrimaryTeal, fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
+                              )
+                            : Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.auto_awesome, color: kPrimaryTeal, size: 20),
+                                      const SizedBox(width: 8),
+                                      Text('Gemini Vision Analysis', style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.bold, color: kPrimaryTeal)),
+                                      const Spacer(),
+                                      Text('Confidence: $confidence', style: GoogleFonts.nunito(fontSize: 12, color: kPrimaryTeal)),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text('Crisis Type: $crisisType', style: GoogleFonts.nunito(fontSize: 14, color: Colors.black87)),
+                                  const SizedBox(height: 4),
+                                  Text('Severity: $severity ($priority)', style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.bold, color: kEmergencyRed)),
+                                  const SizedBox(height: 4),
+                                  Text('Detected: $elements', style: GoogleFonts.nunito(fontSize: 13, color: Colors.black87)),
+                                  const SizedBox(height: 6),
+                                  Text(description, style: GoogleFonts.nunito(fontSize: 12, color: Colors.black54)),
+                                ],
+                              ),
                   ),
                 ),
               ),

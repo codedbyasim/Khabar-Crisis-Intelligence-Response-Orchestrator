@@ -1,12 +1,14 @@
 import 'dart:async';
 import 'dart:math';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:khabar/screens/incident_tracker_screen.dart';
 import 'package:khabar/theme/app_colors.dart';
 import 'package:khabar/api_config.dart';
@@ -30,6 +32,36 @@ class _VoiceReportScreenState extends State<VoiceReportScreen>
   bool _isRecording = true;
   double _lat = 33.6844;
   double _lng = 73.0479;
+  XFile? _attachedImage;
+
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final source = await showDialog<ImageSource>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Attach Image'),
+        content: const Text('Select image source:'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ImageSource.camera),
+            child: const Text('Camera'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, ImageSource.gallery),
+            child: const Text('Gallery'),
+          ),
+        ],
+      ),
+    );
+    if (source != null) {
+      final picked = await picker.pickImage(source: source);
+      if (picked != null) {
+        setState(() {
+          _attachedImage = picked;
+        });
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -114,6 +146,9 @@ class _VoiceReportScreenState extends State<VoiceReportScreen>
         request.files.add(await http.MultipartFile.fromPath('audio', path));
         request.fields['lat'] = _lat.toString();
         request.fields['lng'] = _lng.toString();
+        if (_attachedImage != null) {
+          request.files.add(await http.MultipartFile.fromPath('image', _attachedImage!.path));
+        }
 
         var streamedResponse = await request.send();
         var response = await http.Response.fromStream(streamedResponse);
@@ -266,8 +301,79 @@ class _VoiceReportScreenState extends State<VoiceReportScreen>
                 ),
               ),
             ),
-
-            const SizedBox(height: 40),
+            const SizedBox(height: 16),
+            
+            // Attached Image Section
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              decoration: BoxDecoration(
+                color: kCardWhite,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    _attachedImage == null ? Icons.add_a_photo_outlined : Icons.image_outlined,
+                    color: _attachedImage == null ? Colors.grey : kPrimaryTeal,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _attachedImage == null
+                        ? Text(
+                            'Attach Image (Optional)',
+                            style: GoogleFonts.nunito(
+                              fontSize: 14,
+                              color: Colors.grey.shade600,
+                            ),
+                          )
+                        : Row(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.file(
+                                  File(_attachedImage!.path),
+                                  width: 45,
+                                  height: 45,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  'Photo attached successfully',
+                                  style: GoogleFonts.nunito(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: kTextDark,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.cancel, color: Colors.grey, size: 20),
+                                onPressed: () {
+                                  setState(() {
+                                    _attachedImage = null;
+                                  });
+                                },
+                              ),
+                            ],
+                          ),
+                  ),
+                  if (_attachedImage == null)
+                    TextButton(
+                      onPressed: _pickImage,
+                      style: TextButton.styleFrom(
+                        foregroundColor: kPrimaryTeal,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                      child: const Text('Choose Photo'),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
 
             // Stop Button
             Column(
