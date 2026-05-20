@@ -155,9 +155,6 @@ class _AiChatScreenState extends State<AiChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final language = LanguageProvider().language;
-    final isUrdu = language == 'اردو';
-
     return Scaffold(
       appBar: AppBar(
         title: Row(

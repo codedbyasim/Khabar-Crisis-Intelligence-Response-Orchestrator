@@ -107,8 +107,8 @@ class _PhotoVerificationScreenState extends State<PhotoVerificationScreen> {
             Navigator.pushReplacement(
               context,
               PageRouteBuilder(
-                pageBuilder: (_, a, __) => IncidentTrackerScreen(incidentData: data),
-                transitionsBuilder: (_, a, __, child) => FadeTransition(opacity: a, child: child),
+                pageBuilder: (context, animation, secondaryAnimation) => IncidentTrackerScreen(incidentData: data),
+                transitionsBuilder: (context, animation, secondaryAnimation, child) => FadeTransition(opacity: animation, child: child),
               ),
             );
           }

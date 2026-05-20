@@ -6,9 +6,7 @@ import 'package:khabar/theme/language_provider.dart';
 import 'package:khabar/theme/translations.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:khabar/screens/incident_tracker_screen.dart';
-import 'package:khabar/api_config.dart';
-import 'package:khabar/utils/responsive.dart';
+
 import 'package:khabar/screens/ai_chat_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -21,14 +19,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
   String _selectedLanguage = 'English';
-  bool _isAiStatusExpanded = false;
-  bool _isReportsExpanded = false;
-
   late AnimationController _pulseController;
-  late Animation<double> _pulseAnimation;
-
-  List<dynamic> _incidents = [];
-  bool _isLoadingIncidents = false;
 
   Map<String, dynamic>? _weatherData;
   List<dynamic> _newsArticles = [];
@@ -45,10 +36,6 @@ class _HomeScreenState extends State<HomeScreen>
       duration: const Duration(seconds: 1),
     )..repeat(reverse: true);
 
-    _pulseAnimation = Tween<double>(begin: 0.3, end: 1.0).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
-    _fetchIncidents();
     _fetchWeatherData();
     _fetchNewsData();
   }
@@ -99,22 +86,7 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  Future<void> _fetchIncidents() async {
-    setState(() => _isLoadingIncidents = true);
-    try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/incidents')).timeout(const Duration(seconds: 8));
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        setState(() {
-          _incidents = data['incidents'];
-        });
-      }
-    } catch (e) {
-      debugPrint("Error fetching incidents: $e");
-    } finally {
-      if (mounted) setState(() => _isLoadingIncidents = false);
-    }
-  }
+
 
   void _onLanguageChanged() {
     setState(() {
@@ -134,7 +106,6 @@ class _HomeScreenState extends State<HomeScreen>
     return SafeArea(
       child: RefreshIndicator(
         onRefresh: () async {
-          _fetchIncidents();
           _fetchWeatherData();
           _fetchNewsData();
         },
@@ -275,359 +246,6 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ── Antigravity AI Card ──
-  Widget _buildAntigravityAiCard() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: () {
-          setState(() {
-            _isAiStatusExpanded = !_isAiStatusExpanded;
-          });
-        },
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  CircleAvatar(
-                    radius: 22,
-                    backgroundColor: kPrimaryTeal.withValues(alpha: 0.15),
-                    child: const Icon(Icons.settings_suggest, color: kPrimaryTeal, size: 22),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          AppTranslations.t('antigravity_ai', _selectedLanguage),
-                          style: GoogleFonts.nunito(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: kTextDark,
-                          ),
-                        ),
-                        Text(
-                          AppTranslations.t('pipeline_status', _selectedLanguage),
-                          style: GoogleFonts.nunito(
-                            fontSize: 12,
-                            color: kTextLight,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  AnimatedRotation(
-                    turns: _isAiStatusExpanded ? 0.25 : 0.0,
-                    duration: const Duration(milliseconds: 250),
-                    child: const Icon(Icons.chevron_right, color: kTextLight, size: 24),
-                  ),
-                ],
-              ),
-              AnimatedSize(
-                duration: const Duration(milliseconds: 300),
-                curve: Curves.easeInOut,
-                child: _isAiStatusExpanded
-                    ? _buildAiPipeline()
-                    : const SizedBox.shrink(),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAiPipeline() {
-    return Padding(
-      padding: const EdgeInsets.only(top: 20.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _buildPipelineStep(Icons.radar, AppTranslations.t('detection', _selectedLanguage), false),
-          _buildPipelineStep(Icons.bar_chart, AppTranslations.t('analysis', _selectedLanguage), true),
-          _buildPipelineStep(Icons.lightbulb_outline, AppTranslations.t('planning', _selectedLanguage), false),
-          _buildPipelineStep(Icons.bolt, AppTranslations.t('execution', _selectedLanguage), false),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPipelineStep(IconData icon, String label, bool isActive) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Container(
-          width: 48,
-          height: 48,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isActive ? kPrimaryTeal : Colors.grey.shade200,
-            boxShadow: isActive
-                ? [
-                    BoxShadow(
-                      color: kPrimaryTeal.withValues(alpha: 0.3),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ]
-                : null,
-          ),
-          child: Icon(
-            icon,
-            color: isActive ? Colors.white : kTextLight,
-            size: 22,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: GoogleFonts.nunito(
-            fontSize: 11,
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-            color: isActive ? kPrimaryTeal : kTextLight,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ── My Signals Card ──
-  Widget _buildMySignalsCard() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 22,
-                  backgroundColor: kPrimaryTeal.withValues(alpha: 0.15),
-                  child: const Icon(Icons.radar, color: kPrimaryTeal, size: 22),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Live Emergency Tracking',
-                        style: GoogleFonts.nunito(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: kTextDark,
-                        ),
-                      ),
-                      Text(
-                        'Tap an active request below to track help',
-                        style: GoogleFonts.nunito(
-                          fontSize: 12,
-                          color: kTextLight,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            _buildSignalsList(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSignalsList() {
-    if (_isLoadingIncidents) {
-       return const Padding(
-         padding: EdgeInsets.all(16.0),
-         child: Center(child: CircularProgressIndicator(color: kPrimaryTeal)),
-       );
-    }
-    
-    if (_incidents.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.only(top: 16.0),
-        child: Text("No incidents reported yet. Create one via + Tab.", style: TextStyle(color: Colors.grey)),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 16.0),
-      child: SizedBox(
-        height: 90,
-        child: ListView.builder(
-          scrollDirection: Axis.horizontal,
-          itemCount: _incidents.length,
-          itemBuilder: (context, index) {
-            final inc = _incidents[index];
-            final id = inc['incident_id'].toString().length > 13 
-                ? inc['incident_id'].toString().substring(0, 13) + '...'
-                : inc['incident_id'].toString();
-            final status = inc['status'] ?? 'UNKNOWN';
-            Color color = Colors.orange;
-            if (status == 'RESOLVED') color = Colors.green;
-            else if (status == 'RESPONDING' || status == 'IN_PROGRESS' || status == 'MANUAL_REVIEW_REQUIRED') color = kEmergencyRed;
-            
-            return Padding(
-              padding: const EdgeInsets.only(right: 10.0),
-              child: GestureDetector(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => IncidentTrackerScreen(incidentData: inc),
-                    ),
-                  );
-                },
-                child: _buildSignalItem(id, 'AI Processed', status, color),
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSignalItem(
-    String id,
-    String location,
-    String phase,
-    Color phaseColor,
-  ) {
-    return Container(
-      width: 155,
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: kBackgroundLight,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            id,
-            style: GoogleFonts.nunito(
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-              color: kTextDark,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: phaseColor.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(
-              phase,
-              style: TextStyle(
-                fontSize: 10,
-                color: phaseColor,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            children: [
-              Icon(Icons.location_on, size: 12, color: kTextLight),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  location,
-                  style: GoogleFonts.nunito(fontSize: 11, color: kTextLight),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── System Integrity Card ──
-  Widget _buildSystemIntegrityCard() {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.shield_outlined, color: Colors.green, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  AppTranslations.t('system_integrity', _selectedLanguage),
-                  style: GoogleFonts.nunito(
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold,
-                    color: kTextDark,
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  AppTranslations.t('last_sync', _selectedLanguage),
-                  style: GoogleFonts.nunito(fontSize: 11, color: kTextLight),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            _buildIntegrityRow(Icons.cloud_done, AppTranslations.t('api_connected', _selectedLanguage), true),
-            const SizedBox(height: 10),
-            _buildIntegrityRow(Icons.sync, AppTranslations.t('firebase_synced', _selectedLanguage), true),
-            const SizedBox(height: 10),
-            _buildIntegrityRow(Icons.memory, AppTranslations.t('ai_models_loaded', _selectedLanguage), true),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildIntegrityRow(IconData icon, String label, bool isOk) {
-    return Row(
-      children: [
-        Container(
-          width: 28,
-          height: 28,
-          decoration: BoxDecoration(
-            color: (isOk ? Colors.green : Colors.red).withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(icon, size: 16, color: isOk ? Colors.green : Colors.red),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            label,
-            style: GoogleFonts.nunito(fontSize: 14, color: kTextDark),
-          ),
-        ),
-        Icon(
-          isOk ? Icons.check_circle : Icons.error,
-          size: 18,
-          color: isOk ? Colors.green : Colors.red,
-        ),
-      ],
-    );
-  }
 
   // ── Stats Row ──
   Widget _buildStatsRow() {
@@ -693,8 +311,11 @@ class _HomeScreenState extends State<HomeScreen>
   // ── Today's News (Aaj ki Khabar - REAL DATA) ──
   Widget _buildTodayNewsSection() {
     String newsHeader = "Today's News (Crisis Feed)";
-    if (_selectedLanguage == 'اردو') newsHeader = "آج کی خبریں (ہنگامی حالات)";
-    else if (_selectedLanguage == 'Roman Urdu') newsHeader = "Aaj ki Khabar (Crisis Feed)";
+    if (_selectedLanguage == 'اردو') {
+      newsHeader = "آج کی خبریں (ہنگامی حالات)";
+    } else if (_selectedLanguage == 'Roman Urdu') {
+      newsHeader = "Aaj ki Khabar (Crisis Feed)";
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -822,8 +443,11 @@ class _HomeScreenState extends State<HomeScreen>
     final String cityName = isRawalpindi ? 'Rawalpindi' : 'Islamabad';
 
     String weatherHeader = "Today's Weather Status";
-    if (_selectedLanguage == 'اردو') weatherHeader = "موسم کی صورتحال";
-    else if (_selectedLanguage == 'Roman Urdu') weatherHeader = "Mausam ki Soort-e-haal";
+    if (_selectedLanguage == 'اردو') {
+      weatherHeader = "موسم کی صورتحال";
+    } else if (_selectedLanguage == 'Roman Urdu') {
+      weatherHeader = "Mausam ki Soort-e-haal";
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
