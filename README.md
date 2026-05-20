@@ -1,11 +1,15 @@
-# 🚨 KHABAR — Crisis Intelligence & Response Orchestrator (CIRO)
-### **Powered by Google Antigravity  |  AISeekho Antigravity Hackathon 2026 (Challenge 3)**
-
-KHABAR (Urdu for *News* or *Awareness*) is a state-of-the-art Agentic AI Crisis Management platform built using the Google Antigravity orchestrator. It automates the detection, analysis, planning, and execution of responses to metropolitan disasters (such as urban flooding, heatwaves, road accidents, and building collapses) in Pakistan.
+# 🚨 KHABAR (خبر) — Crisis Intelligence & Response Orchestrator (CIRO)
+### **Powered by Google Antigravity & Gemini 2.5 Flash | AISeekho Antigravity Hackathon 2026 (Challenge 3)**
 
 ---
 
-## 🏗️ 1. System Architecture (4-Tier Overview)
+> **KHABAR** (Urdu for *News* or *Awareness*) is a production-grade Agentic AI Crisis Management platform built on the **Google Antigravity** orchestrator framework. It dynamically detects, analyzes, plans, and simulates responses to localized metropolitan emergencies (such as urban flooding, heatwaves, road blockages, infrastructure failures, and accidents) in Pakistan.
+
+---
+
+## 🏗️ 1. System Architecture (4-Tier Grid)
+
+KHABAR integrates a reactive client architecture with an intelligent, server-side multi-agent coordinator:
 
 ```mermaid
 graph TD
@@ -31,129 +35,101 @@ graph TD
     subgraph Tier4 [Tier 4: Execution & Data]
         I -->|Tools| K[Google Maps API]
         I -->|Tools| L[Action Simulations]
-        I -->|Logs & Tickets| M[(Supabase PostgreSQL - AWS)]
+        I -->|Logs & Tickets| M[(Supabase PostgreSQL - AWS Tokyo)]
         E -->|Ingest Alerts| B
     end
 ```
 
 ---
 
-## 🤖 2. Google Antigravity 4-Agent Workflow
+## 🤖 2. The Google Antigravity 4-Agent Pipeline
 
-Our platform orchestrates four specialized agents in a linear workflow, passing structured JSON payloads down the pipeline.
+The core orchestration is handled in a structured, sequential workflow, where each agent acts on the structured payload from the previous stage:
 
-### **Stage 1: Detection Agent**
-*   **Role:** Analyzes noisy, informal text (in English, Urdu, Roman Urdu, or Punjabi), transcribed voice audio, or disaster photos to classify the crisis type, GPS coordinates, and assigns confidence score.
-*   **Model:** `gemini-2.5-flash` (Zero-shot text parser) and `gemini-2.5-flash` (Vision-based damage estimator).
-
-### **Stage 2: Analysis Agent**
-*   **Role:** Evaluates the severity and determines the impact of the crisis. It calculates stranded vehicles, estimates affected populace, looks up nearby critical infrastructure (via Google Maps), and produces bilingual impact summaries.
-*   **Model:** `gemini-2.5-flash`
-
-### **Stage 3: Planning Agent**
-*   **Role:** Formulates a highly prioritized response action plan. It queries the Vector Database for the official **NDMA (National Disaster Management Authority) Pakistan protocols** and checks local resource inventories before proposing dispatches.
-*   **Model:** `gemini-2.5-flash`
-
-### **Stage 4: Execution Agent**
-*   **Role:** Directly invokes the corresponding tool integrations to simulate the actions in real-time. It records the complete "Before vs After" system state differences.
-*   **Model:** `gemini-2.5-flash`
+1.  **Stage 1: Detection Agent** (`detection_agent.py`): Parses informal, multi-lingual reporting signals (Roman Urdu, Urdu, English), categorizes the incident, and extracts geolocations.
+2.  **Stage 2: Analysis Agent** (`analysis_agent.py`): Performs impact reasoning (stranded vehicles, affected population, nearby critical infrastructure assets).
+3.  **Stage 3: Planning Agent** (`planning_agent.py`): Queries official **NDMA Pakistan SOPs** using RAG vector lookup and resource inventories to build a coordinated response action plan.
+4.  **Stage 4: Execution Agent** (`execution_agent.py`): Directly invokes system tools to simulate responses and registers the complete "Before vs After" global state change.
 
 ---
 
-## 📸 3. Multi-Source Input Pipelines (Voice & Photo)
-*   **Voice Reporting:** Citizens can submit raw audio via the mobile app. The audio is sent directly to the `gemini-2.5-flash` native audio API, which accurately transcribes regional languages like Urdu and Punjabi into actionable text.
-*   **Photo Verification:** Citizens can snap photos of an emerging crisis. The image is analyzed by `gemini-2.5-flash` to verify the severity (e.g., measuring water levels, structural damage) before being ingested into the pipeline.
-*   **Text Processing:** Fully capable of understanding "Roman Urdu" (e.g., *G-10 mein pani bhar gaya hai*) natively through Gemini.
+## 📚 3. Detailed Feature Documentation
+
+We have prepared comprehensive documentation files inside the `docs/` directory detailing every aspect of the project's features and engineering specifications:
+
+*   **[Multi-Source Input Pipelines](file:///f:/khabar/docs/multi_source_input.md)**: Details on noisy text parsing (Roman Urdu), native Gemini voice transcription, and vision-based damage verification.
+*   **[Multi-Agent Orchestration Pipeline](file:///f:/khabar/docs/multi_agent_pipeline.md)**: Deep dive into the four agent roles, payloads, and the sequential Antigravity reasoning chains.
+*   **[Action Simulation Engine](file:///f:/khabar/docs/action_simulation.md)**: In-depth details on traffic rerouting corridors, emergency dispatches, and ticket/SMS warning logs.
+*   **[Outcome Visualization & UI](file:///f:/khabar/docs/outcome_visualization.md)**: How the "Before vs After" changes are rendered in both client interfaces (Flutter and Web).
+*   **[External API & Database Integrations](file:///f:/khabar/docs/external_integrations.md)**: Setup specs for Supabase PostgreSQL, Google Maps SDK, Open-Meteo weather loops, and news polling.
+*   **[Firebase Cloud Messaging (FCM) Integration](file:///f:/khabar/docs/fcm_notifications.md)**: Guide on background handlers, global navigator state routing, and push warnings.
+*   **[API Endpoints Reference Guide](file:///f:/khabar/docs/api_endpoints.md)**: Full REST API specs for all endpoints.
 
 ---
 
-## 🛠️ 3. Real-world Agentic Tool Functions
+## 💻 4. Installation & Running Instructions
 
-The **Execution Agent** uses Google Antigravity's tool-calling interface to execute these functions:
-1.  `query_knowledge_base(question)`: Performs Cosine Similarity Vector Search against NDMA Pakistan SOPs using the **Gemini `text-embedding-004` model**.
-2.  `update_traffic_route(incident_id, alt_route)`: Computes alternate routing using Google Maps API and logs original vs. new routes.
-3.  `dispatch_rescue_team(team_id, incident_id)`: Generates formal dispatch tickets for Rescue 1122 and WASA teams.
-4.  `broadcast_alert(message, location, language)`: Generates and logs delivery counts of simulated localized SMS alerts in Urdu.
-5.  `allocate_supplies(type, qty, location)`: Dynamically handles local emergency depots' resource inventory.
-6.  `create_emergency_ticket(incident_id, agency)`: Submits NDMA and Traffic Police emergency tickets.
-7.  `update_incident_status(incident_id, status)`: Transitions database status logs.
+Ensure your machine is equipped with **Python 3.10+** and the **Flutter SDK** (v3.11.5 or newer).
 
----
-
-## 📊 5. Outcome Visualization & Simulations
-
-To fully satisfy the simulation requirements of the challenge, KHABAR implements deep real-time UI simulations:
-*   **Before vs After Impact Panel:** Inside the `IncidentTrackerScreen`, users can see the exact numerical difference in deployed units, rerouted roads, and emergency tickets before and after the Execution Agent completes its plan.
-*   **Dynamic Map Route Simulation:** When an incident triggers a traffic reroute, the `MapScreen` actively generates and visualizes mock map routes (a red line for the closed arterial road, and a green dotted corridor for the generated detour) dynamically centered around the incident's GPS coordinates.
-*   **System Reasoning Logs:** The complete end-to-end trace logs of all four agents (including their tool calls) are beautifully rendered in the Flutter timeline.
-
----
-
-## 🔔 6. Real-time Live Notifications (FCM)
-
-KHABAR integrates Firebase Cloud Messaging (FCM) to satisfy the alerting requirement:
-*   **In-App Alerts:** When an automated alert tool is executed by the agent, a foreground red warning dialog pops up containing a bilingual summary.
-*   **Deep Linking:** Tapping on a background notification instantly routes the user to the `AlertsScreen` to view the comprehensive crisis report.
-
----
-
-## 📊 7. Real-time Live Web Dashboard
-
-Built with FastAPI and a modern HTML/CSS interface, the **Web Dashboard** (`dashboard_server.py`) features:
-*   **Before vs After Comparisons:** Live dynamic state tables showing exact route changes and dispatch confirmations.
-*   **Agent Reasonings:** The full Antigravity reasoning logs showing exactly what the agents planned.
-*   **Priority Queue:** Real-time visual monitoring of all P1 (Critical) to P5 incidents.
-*   **Resource Monitor:** Live counters showing remaining dewatering pumps, rescue units, and medical kits.
-
----
-
-## 🚀 5. Setup & Run Instructions
-
-Ensure your environment is set up with Python 3.10+ and Flutter.
-
-### **1. Environment Configuration**
-Create a `.env` file in the `agents/` directory:
+### **1. Configure API Keys & Database**
+Create or edit `agents/.env`:
 ```env
-GEMINI_API_KEY=YOUR_GEMINI_API_KEY
-GOOGLE_MAPS_API_KEY=YOUR_GOOGLE_MAPS_API_KEY
+GEMINI_API_KEY=your_gemini_api_key
+GOOGLE_MAPS_API_KEY=your_gmaps_key
+DATABASE_URL=your_supabase_postgresql_connection_string
+TOMTOM_API_KEY=optional_tomtom_key
 ```
 
-### **2. Install Dependencies**
+### **2. Setup and Run the Python Backend**
+Navigate to the root directory, activate a virtual environment, and install dependencies:
 ```bash
+python -m venv venv
+# On Windows Powershell:
+.\venv\Scripts\activate
+# On macOS/Linux:
+source venv/bin/activate
+
 pip install -r requirements.txt
 ```
-
-### **3. Start Python API Gateway Server**
+Run the FastAPI Gateway server:
 ```bash
 python api_server.py
 ```
-*Runs on `http://127.0.0.1:8000`*
-*(This automatically boots the background weather Open-Meteo & Google Maps traffic ingestion loops).*
+*API will run on `http://127.0.0.1:8000`*
 
-### **4. Start Web Dashboard**
+### **3. Start the Web Dashboard**
+Open a new terminal tab, activate the virtual environment, and run:
 ```bash
 python dashboard_server.py
 ```
-*Open `http://127.0.0.1:8001` in your browser.*
+*Open `http://127.0.0.1:8001` in your browser to view the Dark-Glassmorphic UI.*
 
-### **5. Run Flutter Mobile App**
-Ensure your emulator is running, then run:
+### **4. Launch the Flutter Mobile App**
+Ensure your emulator is running and connected to ADB:
 ```bash
 flutter pub get
 flutter run
 ```
+> [!NOTE]
+> Ensure `lib/api_config.dart` has the `baseUrl` pointing to `http://10.0.2.2:8000` if you are using the Android Emulator.
 
 ---
 
-## 🏆 9. Key Innovations & Highlights
-*   **Dual Language Audio Pipeline:** Speech inputs are transcribed directly via **Gemini 2.5 Flash Native Audio** supporting raw voice.
-*   **Live Weather Ingestor:** Uses actual, real-time geocoded Open-Meteo forecasts to trigger proactive flood/heatwave emergencies without human input.
-*   **Zero-dependency Neural RAG:** The knowledge base uses a lightweight, highly efficient local Vector DB using cosine similarity over real Gemini Embeddings.
-*   **Production-grade Supabase Integration:** Dropped all database mocks to establish a real-time, persistent PostgreSQL database hosted on Supabase (AWS Tokyo), fully syncing incidents and resources across client sessions.
+## ⚡ 5. Execution Traces & System Logging
+*   **Persistent File Logging:** The backend automatically outputs complete execution logs to **`khabar_server.log`** on your disk.
+*   **Web Console:** Every API request, agent reasoning decision, and simulated action is printed in real-time in the terminal window.
+*   **Auditability:** The web dashboard features an **AI Agent Trace Logs** console widget to monitor live prompt executions by category (`[DETECTION]`, `[PLANNING]`, etc.) in real-time.
 
 ---
 
-## 📝 10. Assumptions
-1.  **Map Route Simulation:** As LLMs cannot reliably output exact 50+ coordinate polylines for real-world detours, the "mock route generation" visually simulates the detour via an algorithm in the Flutter MapScreen relative to the incident center.
-2.  **Resource API:** It is assumed that the global resource API provides near-real-time data; in absence, the system gracefully falls back to a padded baseline to prevent planning failure.
-3.  **Human-in-the-Loop:** For demonstration, the system auto-proceeds from P5 to P1. In a production environment, P3-P5 events would require human dispatcher confirmation before proceeding to Execution.
+## 🏆 6. Key Innovations & Hackathon Highlights
+*   **Regional Native Audio:** Bypasses Whisper entirely. Raw audio is processed directly through **Gemini Native Audio API** to support English, Urdu, and regional languages (Punjabi/Pashto).
+*   **Proactive Weather Polling:** Uses geocoded Open-Meteo forecasts to automatically trigger heatwave or urban flooding warnings in the background without human intervention.
+*   **Cloud-Native Data Core:** Built on a production-ready AWS Tokyo PostgreSQL database hosted on Supabase, replacing standard static mock files to sync resources instantly between sessions.
+
+---
+
+## 📝 7. Core Platform Assumptions
+1.  **Map Corridor Simulations:** Due to API quota limits and routing complexities of rendering live routes via Google Maps, the detour corridor is visually simulated in the Flutter `MapScreen` using coordinate boundaries relative to the incident center.
+2.  **Emergency Dispatch Capacity:** The system assumes a baseline resource capacity (WASA, Rescue 1122, K-Electric) in the database. In case of resource exhaustion, the Planning Agent automatically escalates incidents to `STANDBY` until units are released by the dispatcher.
+3.  **Human-in-the-Loop Override:** While the pipeline is designed to be fully autonomous, P3-P5 priority events in production would require manual dispatcher confirmation before the Execution Agent triggers actual tool dispatches.
