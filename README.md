@@ -66,7 +66,7 @@ The coordination pipeline consists of **four distinct stages** sharing a single 
 *   **Outputs:** Bilingual summaries in Romanized Urdu and English.
 
 ### **4.3. Planning Agent (`planning_agent.py`)**
-*   **Purpose:** Draft a coordinated action plan.
+*   **Purpose:** Draft a Coordinated Action Plan.
 *   **RAG Vector Lookup:** Performs cosine similarity lookup on **NDMA Pakistan SOPs** (stored as vector embeddings in our knowledge base) to fetch standard protocols.
 *   **Resource Inventory Check:** Queries the Supabase PostgreSQL database to check available quantities of ambulances, fire trucks, dewatering pumps, and police units before making resource recommendations.
 
@@ -93,7 +93,109 @@ The mobile client is built using Flutter, offering a dark-themed premium design 
 
 ---
 
-## 🛠️ 6. Technology Stack
+## 💻 6. API Reference & Payload Schemas
+
+### **6.1. Submit Text Report (`POST /report/text`)**
+*   **Payload (JSON):**
+    ```json
+    {
+      "content": "Nullah Lai is overflowing, water is coming onto Murree Road Rawalpindi!",
+      "lat": 33.6375,
+      "lng": 73.0784
+    }
+    ```
+*   **Response (JSON):**
+    ```json
+    {
+      "success": true,
+      "incident_id": "SIG-1716223400-TXT",
+      "status": "PROCESSING",
+      "poll_url": "/incident/SIG-1716223400-TXT"
+    }
+    ```
+
+### **6.2. Submit Photo Verification (`POST /report/image`)**
+*   **Payload (Multipart Form-Data):**
+    *   `image`: binary (JPEG/PNG)
+    *   `description`: "Water logging in G-10 Markaz Islamabad"
+    *   `lat`: 33.6844
+    *   `lng`: 73.0479
+*   **Response (JSON):**
+    ```json
+    {
+      "success": true,
+      "incident_id": "SIG-1716223410-IMG",
+      "status": "PROCESSING",
+      "vision_analysis": {
+        "crisis_type": "urban_flooding",
+        "severity": "HIGH",
+        "priority": "P2",
+        "confidence": 0.95,
+        "description": "Flooding of roadway with multiple partially submerged passenger cars."
+      }
+    }
+    ```
+
+### **6.3. Submit Voice Report with Photo (`POST /report/voice`)**
+*   **Payload (Multipart Form-Data):**
+    *   `audio`: binary (M4A/WAV)
+    *   `image`: binary (Optional attached JPEG/PNG)
+    *   `lat`: 33.6844
+    *   `lng`: 73.0479
+*   **Response (JSON):**
+    ```json
+    {
+      "success": true,
+      "incident_id": "SIG-1716223420-VOI",
+      "status": "PROCESSING",
+      "speech_analysis": {
+        "detected_language": "Urdu",
+        "transcription_original": "گاڑیاں ڈوب رہی ہیں اور راستہ بند ہے",
+        "transcription_english": "Cars are sinking and the road is blocked."
+      }
+    }
+    ```
+
+---
+
+## 💾 7. Database Tables (Supabase DDL)
+
+To setup the application, create the following core relational schemas in your PostgreSQL database:
+
+```sql
+-- Core Incidents Table
+CREATE TABLE incidents (
+    incident_id VARCHAR(50) PRIMARY KEY,
+    title VARCHAR(150),
+    description TEXT,
+    status VARCHAR(50) DEFAULT 'PROCESSING',
+    priority VARCHAR(10) DEFAULT 'P3',
+    lat DOUBLE PRECISION,
+    lng DOUBLE PRECISION,
+    source VARCHAR(50),
+    before_state JSONB,
+    after_state JSONB,
+    speech_analysis JSONB,
+    vision_analysis JSONB,
+    traces TEXT[],
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Resource Inventory Table
+CREATE TABLE resources (
+    resource_id VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(150) NOT NULL,
+    type VARCHAR(50) NOT NULL, -- e.g. ambulance, dewatering_pump, fire_truck, rescue_team
+    quantity INTEGER DEFAULT 1,
+    status VARCHAR(50) DEFAULT 'available',
+    location JSONB -- Contains {"lat": float, "lng": float}
+);
+```
+
+---
+
+## 🛠️ 8. Technology Stack
 KHABAR integrates modern cloud services and robust engineering frameworks:
 
 *   **Core Logic & Orchestration:** Python, Google Antigravity SDK, FastAPI
@@ -105,9 +207,16 @@ KHABAR integrates modern cloud services and robust engineering frameworks:
 
 ---
 
-## 📂 7. External Configuration & Auditing References
+## 📂 9. External Configuration & Auditing References
 For details on system setup or compliance status, refer to these workspace documents:
 
 *   **[Environment Setup & DB Schemas (Setup.md)](file:///f:/khabar/Setup.md):** Complete installation guide, database queries, and env configuration variables.
 *   **[SRS Compliance Audit Report (ciro_audit_report.md)](file:///C:/Users/HCC/.gemini/antigravity/brain/1b8b626a-eb69-46d4-8557-25cd92d7cdca/ciro_audit_report.md):** Analysis of the implementation coverage against all requirements.
 *   **[Hackathon Master Audit Key (challenge_compliance_master_key.md)](file:///C:/Users/HCC/.gemini/antigravity/brain/1b8b626a-eb69-46d4-8557-25cd92d7cdca/challenge_compliance_master_key.md):** Compliance master matrix reviewing each evaluation metric.
+
+---
+
+## 📝 10. Core Platform Assumptions
+1.  **Map Corridor Simulations:** Due to API quota limits and routing complexities of rendering live routes via Google Maps, the detour corridor is visually simulated in the Flutter `MapScreen` using coordinate boundaries relative to the incident center.
+2.  **Emergency Dispatch Capacity:** The system assumes a baseline resource capacity (WASA, Rescue 1122, K-Electric) in the database. In case of resource exhaustion, the Planning Agent automatically escalates incidents to `STANDBY` until units are released by the dispatcher.
+3.  **Human-in-the-Loop Override:** While the pipeline is designed to be fully autonomous, P3-P5 priority events in production would require manual dispatcher confirmation before the Execution Agent triggers actual tool dispatches.
