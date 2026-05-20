@@ -28,7 +28,20 @@ from gemini_speech import GeminiSpeech
 from alert_service import alert_service
 from maps_service import maps_service
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+# Setup dual logging (Console and file)
+log_formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
+root_logger = logging.getLogger()
+root_logger.setLevel(logging.INFO)
+
+# Console Handler (Terminal)
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setFormatter(log_formatter)
+root_logger.addHandler(console_handler)
+
+# File Handler (khabar_server.log)
+file_handler = logging.FileHandler("khabar_server.log", encoding="utf-8")
+file_handler.setFormatter(log_formatter)
+root_logger.addHandler(file_handler)
 
 from automated_ingestion import start_automated_ingestion
 import asyncio
