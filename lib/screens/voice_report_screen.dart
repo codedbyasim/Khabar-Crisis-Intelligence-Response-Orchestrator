@@ -80,7 +80,7 @@ class _VoiceReportScreenState extends State<VoiceReportScreen>
       final path = await _audioRecorder.stop();
       if (path != null) {
         var request = http.MultipartRequest('POST', Uri.parse('${ApiConfig.baseUrl}/report/voice'));
-        request.files.add(await http.MultipartFile.fromPath('file', path));
+        request.files.add(await http.MultipartFile.fromPath('audio', path));
 
         var streamedResponse = await request.send();
         var response = await http.Response.fromStream(streamedResponse);

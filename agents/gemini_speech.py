@@ -31,7 +31,16 @@ class GeminiSpeech:
         """
         tmp_path = None
         try:
-            suffix = ".wav" if "wav" in mime_type else ".mp3"
+            # Determine correct suffix from mime type
+            if "wav" in mime_type:
+                suffix = ".wav"
+            elif "mp4" in mime_type or "m4a" in mime_type:
+                suffix = ".m4a"
+            elif "aac" in mime_type:
+                suffix = ".aac"
+            else:
+                suffix = ".mp3"
+                
             with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
                 tmp.write(audio_bytes)
                 tmp_path = tmp.name
