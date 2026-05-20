@@ -76,6 +76,7 @@ class _MapScreenState extends State<MapScreen> {
   Marker? _searchedMarker;
 
   List<MapIncident> _realIncidents = [];
+  List<dynamic> _realResources = [];
 
   @override
   void initState() {
@@ -83,6 +84,24 @@ class _MapScreenState extends State<MapScreen> {
     // Default featured incident corresponding exactly to "Major Road Sinkhole" in Jinnah Avenue, Islamabad
     _activeIncident = _getDefaultIncident();
     _fetchRealIncidents();
+    _fetchRealResources();
+  }
+
+  Future<void> _fetchRealResources() async {
+    try {
+      final url = '${ApiConfig.baseUrl}/resources';
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        if (mounted) {
+          setState(() {
+            _realResources = data['resources'] ?? [];
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Error fetching map resources: $e');
+    }
   }
 
   Future<void> _fetchRealIncidents() async {
@@ -331,115 +350,51 @@ class _MapScreenState extends State<MapScreen> {
   Set<Marker> _createMarkers() {
     final markers = <Marker>{};
 
-    // Add User's Real Location Marker (Blue Dot)
+    // 1. Add User's Real Location Marker (Blue Dot)
     markers.add(
       Marker(
         markerId: const MarkerId('user_real_location'),
-        position: const LatLng(33.7015, 73.0400), // G-11 Markaz matching user GPS coordinates
+        position: const LatLng(33.7015, 73.0400),
         infoWindow: const InfoWindow(
           title: "My Location",
-          snippet: "G-11 Markaz, Islamabad (Location Access Active)",
+          snippet: "GPS Active",
         ),
         icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
       ),
     );
 
-    // Add 4 emergency resource depots/stations in Islamabad
-    markers.add(
-      Marker(
-        markerId: const MarkerId('res_faizabad'),
-        position: const LatLng(33.6601, 73.0789),
-        infoWindow: const InfoWindow(
-          title: "Faizabad Rescue 1122 Station",
-          snippet: "Available: 3 Ambulances, 5 Traffic Units",
-        ),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueViolet),
-      ),
-    );
+    // 2. Add dynamic Backend Resources (Ambulances, Fire Trucks, Rescue Teams)
+    for (var r in _realResources) {
+      final loc = r['location'];
+      if (loc != null && loc['lat'] != null && loc['lng'] != null) {
+        final double lat = (loc['lat'] as num).toDouble();
+        final double lng = (loc['lng'] as num).toDouble();
+        
+        final String type = r['resource_type'] ?? 'Unknown';
+        final String status = r['status'] ?? 'available';
+        final String resId = r['resource_id'] ?? DateTime.now().millisecondsSinceEpoch.toString();
+        
+        double hue = BitmapDescriptor.hueViolet;
+        if (type.toLowerCase() == 'ambulance') hue = BitmapDescriptor.hueRose;
+        else if (type.toLowerCase() == 'fire_truck') hue = BitmapDescriptor.hueOrange;
+        else if (type.toLowerCase() == 'rescue_team') hue = BitmapDescriptor.hueCyan;
 
-    markers.add(
-      Marker(
-        markerId: const MarkerId('res_g10'),
-        position: const LatLng(33.6938, 73.0551),
-        infoWindow: const InfoWindow(
-          title: "G-10 WASA Depot",
-          snippet: "Available: 2 Dewatering Pumps",
-        ),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
-      ),
-    );
-
-    markers.add(
-      Marker(
-        markerId: const MarkerId('res_bluearea'),
-        position: const LatLng(33.7182, 73.0673),
-        infoWindow: const InfoWindow(
-          title: "Blue Area Fire Headquarters",
-          snippet: "Available: 2 Fire Trucks",
-        ),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-      ),
-    );
-
-    markers.add(
-      Marker(
-        markerId: const MarkerId('res_f8'),
-        position: const LatLng(33.7118, 73.0422),
-        infoWindow: const InfoWindow(
-          title: "F-8 NDMA Emergency Depot",
-          snippet: "Available: 4 Utility/Rescue Crews",
-        ),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-      ),
-    );
-
-    // P1 Emergency incident marker
-    if (_showCrisisMarkers) {
-      markers.add(
-        Marker(
-          markerId: const MarkerId('featured_sinkhole'),
-          position: const LatLng(33.7220, 73.0580),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          onTap: () {
-            setState(() {
-              _activeIncident = _getDefaultIncident();
-            });
-          },
-        ),
-      );
+        markers.add(
+          Marker(
+            markerId: MarkerId('res_$resId'),
+            position: LatLng(lat, lng),
+            infoWindow: InfoWindow(
+              title: "$type ($status)",
+              snippet: "Quantity Available: ${r['quantity_available']}",
+            ),
+            icon: BitmapDescriptor.defaultMarkerWithHue(hue),
+          ),
+        );
+      }
     }
 
-    // Yellow construction warning pin
-    if (_showConstructionMarkers) {
-      markers.add(
-        Marker(
-          markerId: const MarkerId('construction_yellow'),
-          position: const LatLng(33.7130, 73.0620),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-          onTap: () {
-            setState(() {
-              _activeIncident = MapIncident(
-                id: 'KH-102',
-                title: 'CDA Utility Repair Work',
-                urduTitle: 'مرمتی کام',
-                romanUrduTitle: 'CDA Repair',
-                position: const LatLng(33.7130, 73.0620),
-                severity: 'P3 URGENT',
-                location: 'Jinnah Avenue / 8th Road Crossing',
-                urduLocation: 'جناح ایونیو کراسنگ',
-                responsePlanHeader: 'Construction Response Plan',
-                urduResponsePlanHeader: 'تعمیراتی جوابی منصوبہ',
-                steps: [
-                  ResponseStep(
-                    title: 'Slow down traffic lanes',
-                    urduTitle: 'لین کی رفتار آہستہ کریں',
-                    subtitle: 'Signboards placed 200m ahead.',
-                    urduSubtitle: 'سائن بورڈ 200 میٹر آگے نصب۔',
-                  ),
-                  ResponseStep(
-                    title: 'Re-routing standard utility supply',
-                    urduTitle: 'متبادل یوٹیلٹی سپلائی لائن',
-                    subtitle: 'ETA completion: 3 hrs.',
+    // 3. Add dynamic Backend Incidents (P1 Crisis, P3 Urgent)
+    if (_showCrisisMarkers) {
                     urduSubtitle: 'توقع: 3 گھنٹے۔',
                   ),
                 ],

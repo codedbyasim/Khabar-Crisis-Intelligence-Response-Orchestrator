@@ -687,61 +687,11 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ── Today's News (Aaj ki Khabar) ──
+  // ── Today's News (Aaj ki Khabar - REAL DATA) ──
   Widget _buildTodayNewsSection() {
-    final String fullRegion = LanguageProvider().region;
-    final bool isRawalpindi = fullRegion.toLowerCase().contains('rawalpindi');
-
     String newsHeader = "Today's News (Crisis Feed)";
-    String newsTitle1 = isRawalpindi 
-        ? "Nullah Lai Spillways Opening Warning"
-        : "Sector G-11 Heavy Urban Flooding Warning";
-    String newsDesc1 = isRawalpindi
-        ? "District admin is evacuating low-lying residential sectors."
-        : "WASA has deployed dewatering units at central locations.";
-    String newsTitle2 = isRawalpindi
-        ? "Saddar Plaza Commercial Fire Extinguished"
-        : "Faizabad Interchange Traffic Diverted";
-    String newsDesc2 = isRawalpindi
-        ? "Rescue 1122 fire crews secured the area. Murree Road clear."
-        : "Rescue 1122 reports minor accidents due to slippery roads. Reroute Kashmir Hwy.";
-    
-    String newsTime1 = "10 mins ago";
-    String newsTime2 = "35 mins ago";
-
-    if (_selectedLanguage == 'اردو') {
-      newsHeader = "آج کی خبریں (ہنگامی حالات)";
-      newsTitle1 = isRawalpindi
-          ? "نالہ لئی میں پانی کا بہاؤ بڑھنے کا خطرہ"
-          : "سیکٹر جی-11 شدید سیلابی انتباہ";
-      newsDesc1 = isRawalpindi
-          ? "ضلعی انتظامیہ نے قریبی گلیوں کو خالی کروانا شروع کر دیا ہے۔"
-          : "واسا نے اہم مقامات پر پانی نکالنے والے پمپ تعینات کر دیئے ہیں۔";
-      newsTitle2 = isRawalpindi
-          ? "صدر پلازہ کی آگ پر مکمل قابو پا لیا گیا"
-          : "فیض آباد انٹرچینج ٹریفک کا متبادل راستہ";
-      newsDesc2 = isRawalpindi
-          ? "ریسکیو 1122 کے دستوں نے علاقہ محفوظ کر لیا۔ مری روڈ بحال۔"
-          : "ریسکیو 1122 کے مطابق پھسلن کی وجہ سے معمولی حادثات۔ کشمیر ہائی وے متبادل اختیار کریں۔";
-      newsTime1 = "10 منٹ پہلے";
-      newsTime2 = "35 منٹ پہلے";
-    } else if (_selectedLanguage == 'Roman Urdu') {
-      newsHeader = "Aaj ki Khabar (Crisis Feed)";
-      newsTitle1 = isRawalpindi
-          ? "Nullah Lai Spillways Opening Warning"
-          : "Sector G-11 Heavy Urban Flooding Warning";
-      newsDesc1 = isRawalpindi
-          ? "District admin ne low-lying residential areas ko khali karwana shuru kar diya."
-          : "WASA ne central locations par dewatering units deploy kar diye hain.";
-      newsTitle2 = isRawalpindi
-          ? "Saddar Plaza Commercial Fire Extinguish"
-          : "Faizabad Interchange Traffic Divert";
-      newsDesc2 = isRawalpindi
-          ? "Rescue 1122 crews ne area secure kar liya. Bahal Murree Road."
-          : "Rescue 1122 reports minor accidents due to slippery roads. Kashmir Hwy se reroute karein.";
-      newsTime1 = "10 mins pehle";
-      newsTime2 = "35 mins pehle";
-    }
+    if (_selectedLanguage == 'اردو') newsHeader = "آج کی خبریں (ہنگامی حالات)";
+    else if (_selectedLanguage == 'Roman Urdu') newsHeader = "Aaj ki Khabar (Crisis Feed)";
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -767,25 +717,56 @@ class _HomeScreenState extends State<HomeScreen>
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: Padding(
             padding: const EdgeInsets.all(14.0),
-            child: Column(
-              children: [
-                _buildNewsItem(
-                  newsTitle1,
-                  newsDesc1,
-                  newsTime1,
-                  Icons.water_drop,
-                  Colors.blue,
-                ),
-                const Divider(height: 16),
-                _buildNewsItem(
-                  newsTitle2,
-                  newsDesc2,
-                  newsTime2,
-                  Icons.traffic,
-                  Colors.orange,
-                ),
-              ],
-            ),
+            child: _isLoadingNews
+                ? const Center(child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: CircularProgressIndicator(color: kPrimaryTeal),
+                  ))
+                : _newsArticles.isEmpty
+                    ? Center(child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Text(
+                          'No local news available at the moment.',
+                          style: GoogleFonts.nunito(color: kTextLight),
+                        ),
+                      ))
+                    : Column(
+                        children: List.generate(
+                          _newsArticles.length > 2 ? 2 : _newsArticles.length,
+                          (index) {
+                            final article = _newsArticles[index];
+                            final title = article['title'] ?? 'Emergency Report';
+                            final sourceName = article['source']?['name'] ?? 'Local Source';
+                            final dateStr = article['date'] ?? '';
+                            
+                            // Determine basic icon and color based on title
+                            IconData icon = Icons.campaign;
+                            Color color = Colors.orange;
+                            final lowerTitle = title.toLowerCase();
+                            if (lowerTitle.contains('flood') || lowerTitle.contains('rain')) {
+                              icon = Icons.water_drop; color = Colors.blue;
+                            } else if (lowerTitle.contains('fire')) {
+                              icon = Icons.local_fire_department; color = Colors.red;
+                            } else if (lowerTitle.contains('traffic') || lowerTitle.contains('accident')) {
+                              icon = Icons.traffic; color = Colors.orange;
+                            }
+
+                            return Column(
+                              children: [
+                                _buildNewsItem(
+                                  title,
+                                  sourceName,
+                                  dateStr,
+                                  icon,
+                                  color,
+                                ),
+                                if (index == 0 && _newsArticles.length > 1)
+                                  const Divider(height: 16),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
           ),
         ),
       ],
@@ -831,33 +812,15 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  // ── Islamabad & Rawalpindi Weather ──
+  // ── Islamabad & Rawalpindi Weather (REAL DATA from Open-Meteo) ──
   Widget _buildWeatherSection() {
     final String fullRegion = LanguageProvider().region;
     final bool isRawalpindi = fullRegion.toLowerCase().contains('rawalpindi');
+    final String cityName = isRawalpindi ? 'Rawalpindi' : 'Islamabad';
 
     String weatherHeader = "Today's Weather Status";
-    String weatherLoc = isRawalpindi ? "Rawalpindi" : "Islamabad";
-    String weatherAlert = isRawalpindi ? "Nullah Lai Overflow & Flood Alert" : "Heavy Monsoon Rains & Flood Alert";
-    String weatherRisk = isRawalpindi 
-        ? "High Flood Risk: Liaquat Bagh, Committee Chowk, Saddar"
-        : "High Flood Risk: G-10, G-11, I-9 sectors";
-    
-    if (_selectedLanguage == 'اردو') {
-      weatherHeader = "موسم کی صورتحال";
-      weatherLoc = isRawalpindi ? "راولپنڈی" : "اسلام آباد";
-      weatherAlert = isRawalpindi ? "نالہ لئی میں طغیانی اور ہنگامی الرٹ" : "شدید مانسون بارشیں اور سیلاب کا الرٹ";
-      weatherRisk = isRawalpindi
-          ? "سیلابی خطرہ: لیاقت باغ، کمیٹی چوک، صدر سیکٹرز"
-          : "سیلاب کا زیادہ خطرہ: جی-10، جی-11، آئی-9 سیکٹرز";
-    } else if (_selectedLanguage == 'Roman Urdu') {
-      weatherHeader = "Mausam ki Soort-e-haal";
-      weatherLoc = isRawalpindi ? "Rawalpindi" : "Islamabad";
-      weatherAlert = isRawalpindi ? "Nullah Lai Overflow Aur Flood Alert" : "Heavy Monsoon Rains Aur Flood Alert";
-      weatherRisk = isRawalpindi
-          ? "High Flood Risk: Liaquat Bagh, Committee Chowk, Saddar"
-          : "High Flood Risk: G-10, G-11, I-9 sectors";
-    }
+    if (_selectedLanguage == 'اردو') weatherHeader = "موسم کی صورتحال";
+    else if (_selectedLanguage == 'Roman Urdu') weatherHeader = "Mausam ki Soort-e-haal";
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -890,67 +853,102 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
             padding: const EdgeInsets.all(16.0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        weatherLoc,
-                        style: GoogleFonts.nunito(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        weatherAlert,
-                        style: GoogleFonts.nunito(
-                          fontSize: 13,
-                          color: Colors.white70,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          const Icon(Icons.warning, color: Colors.yellow, size: 16),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              weatherRisk,
-                              style: GoogleFonts.nunito(
-                                fontSize: 11,
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                Column(
-                  children: [
-                    const Icon(Icons.thunderstorm, color: Colors.white, size: 48),
-                    const SizedBox(height: 4),
-                    Text(
-                      "26°C",
-                      style: GoogleFonts.nunito(
-                        fontSize: 28,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+            child: _isLoadingWeather
+                ? const Center(child: Padding(
+                    padding: EdgeInsets.all(16.0),
+                    child: CircularProgressIndicator(color: Colors.white),
+                  ))
+                : _weatherData == null
+                    ? Center(child: Text(
+                        'Weather unavailable',
+                        style: GoogleFonts.nunito(color: Colors.white70),
+                      ))
+                    : _buildWeatherContent(cityName),
           ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWeatherContent(String cityName) {
+    final current = _weatherData!['current'] ?? {};
+    final double tempC = (current['temperature_2m'] ?? 0.0).toDouble();
+    final double windKmh = (current['wind_speed_10m'] ?? 0.0).toDouble();
+    final int weatherCode = (current['weather_code'] ?? 0) as int;
+
+    // Map WMO weather code to emoji + label
+    String weatherLabel;
+    IconData weatherIcon;
+    if (weatherCode == 0) {
+      weatherLabel = 'Clear Sky'; weatherIcon = Icons.wb_sunny;
+    } else if (weatherCode <= 3) {
+      weatherLabel = 'Partly Cloudy'; weatherIcon = Icons.cloud;
+    } else if (weatherCode <= 49) {
+      weatherLabel = 'Foggy'; weatherIcon = Icons.cloud;
+    } else if (weatherCode <= 67) {
+      weatherLabel = 'Rainy'; weatherIcon = Icons.umbrella;
+    } else if (weatherCode <= 77) {
+      weatherLabel = 'Snow'; weatherIcon = Icons.ac_unit;
+    } else if (weatherCode <= 82) {
+      weatherLabel = 'Heavy Showers'; weatherIcon = Icons.thunderstorm;
+    } else {
+      weatherLabel = 'Thunderstorm'; weatherIcon = Icons.thunderstorm;
+    }
+
+    return Row(
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                cityName,
+                style: GoogleFonts.nunito(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                weatherLabel,
+                style: GoogleFonts.nunito(
+                  fontSize: 14,
+                  color: Colors.white70,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  const Icon(Icons.air, color: Colors.white70, size: 16),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Wind: ${windKmh.toStringAsFixed(1)} km/h',
+                    style: GoogleFonts.nunito(
+                      fontSize: 12,
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        Column(
+          children: [
+            Icon(weatherIcon, color: Colors.white, size: 48),
+            const SizedBox(height: 4),
+            Text(
+              '${tempC.toStringAsFixed(1)}°C',
+              style: GoogleFonts.nunito(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+            ),
+          ],
         ),
       ],
     );
