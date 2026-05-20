@@ -1,3 +1,4 @@
+// ignore_for_file: use_build_context_synchronously
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -14,6 +15,9 @@ import 'package:khabar/theme/translations.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+
+// Global navigator key to allow dialogs and routing from FCM callbacks
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 // Background message handler (must be top-level function)
 @pragma('vm:entry-point')
@@ -46,6 +50,60 @@ void main() async {
     // Handle foreground messages
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       debugPrint('[FCM] Foreground message: ${message.notification?.title}');
+      if (message.notification != null && navigatorKey.currentContext != null) {
+        final context = navigatorKey.currentContext!;
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 28),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    message.notification?.title ?? 'Critical Alert',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+            content: Text(
+              message.notification?.body ?? '',
+              style: const TextStyle(fontSize: 15),
+            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Dismiss', style: TextStyle(color: Colors.grey)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: kEmergencyRed,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                onPressed: () {
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(builder: (context) => const AlertsScreen()));
+                },
+                child: const Text('View Source'),
+              ),
+            ],
+          ),
+        );
+      }
+    });
+
+    // Handle background notification clicks
+    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
+      debugPrint('[FCM] Notification clicked! Routing to source page.');
+      if (navigatorKey.currentContext != null) {
+        Navigator.push(
+          navigatorKey.currentContext!,
+          MaterialPageRoute(builder: (context) => const AlertsScreen()),
+        );
+      }
     });
   } catch (e) {
     // Firebase not configured yet — app runs without push notifications
@@ -62,6 +120,7 @@ class KhabarApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: navigatorKey,
       title: 'Khabar App',
       debugShowCheckedModeBanner: false,
       localizationsDelegates: const [
