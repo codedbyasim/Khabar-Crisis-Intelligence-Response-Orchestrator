@@ -40,6 +40,8 @@ class IncidentMemory(BaseModel):
     system_state: SystemState
     traces: List[str] = []
     status: str = "INGESTED"
+    lat: Optional[float] = None
+    lng: Optional[float] = None
 
     class Config:
         arbitrary_types_allowed = True
@@ -48,8 +50,7 @@ class IncidentMemory(BaseModel):
 class SharedMemoryBlock:
     def __init__(self):
         self.active_incidents: Dict[str, IncidentMemory] = {}
-    @property
-    def global_resources(self) -> Dict[str, int]:
+    def get_global_resources(self) -> Dict[str, int]:
         """Dynamically fetch and aggregate current available resources from Supabase."""
         try:
             from firestore_db import db as firestore
@@ -158,6 +159,8 @@ class KhabarOrchestrator:
                 "priority": memory.detection_output.priority.value,
                 "confidence": memory.detection_output.confidence_score,
                 "location": loc_dict,
+                "lat": memory.lat,
+                "lng": memory.lng,
             })
         # Add execution before/after if available
         if memory.execution_output:
@@ -172,7 +175,7 @@ class KhabarOrchestrator:
     async def process_incident(self, raw_signal: RawCrisisSignal):
         memory = self.memory_block.register_incident(raw_signal)
         self.log_trace(memory, "INGESTION", f"Signal received via {raw_signal.source_type}")
-        self.push_to_firestore(memory)
+        await asyncio.to_thread(self.push_to_firestore, memory)
 
         max_retries = 2
 
@@ -192,7 +195,7 @@ class KhabarOrchestrator:
             except Exception as e:
                 self.log_trace(memory, "DETECTION_ERROR", str(e))
                 if attempt == max_retries - 1:
-                    self._trigger_fallback(memory, "Detection Failed")
+                    await self._trigger_fallback(memory, "Detection Failed")
                     return
 
         # Check if the report is verified/valid and if there is a real crisis/emergency
@@ -220,7 +223,7 @@ class KhabarOrchestrator:
                 # Also save back to memory record
                 memory.detection_output.is_verified = False
                 memory.detection_output.verification_reason = reason
-            self.push_to_firestore(memory)
+            await asyncio.to_thread(self.push_to_firestore, memory)
             return
 
         # ── FR-11: P1 AUTO-TRIGGER ──
@@ -250,11 +253,14 @@ class KhabarOrchestrator:
             lat, lng = float(user_lat), float(user_lng)
             source = "user_app_gps"
         else:
-            geo = self.maps.geocode_location(location_text)
+            geo = await asyncio.to_thread(self.maps.geocode_location, location_text)
             lat, lng = geo["lat"], geo["lng"]
             source = geo["source"]
             
-        maps_ctx = self.maps.get_context_for_analysis(lat, lng, location_text)
+        memory.lat = lat
+        memory.lng = lng
+            
+        maps_ctx = await asyncio.to_thread(self.maps.get_context_for_analysis, lat, lng, location_text)
         maps_ctx["geocoded_location"]["source"] = source
 
         context = ContextSignals(
@@ -262,7 +268,7 @@ class KhabarOrchestrator:
             # Weather/traffic context — sourced from real Open-Meteo + TomTom ingestion signals
             weather_signals={"source": "Open-Meteo Live API", "precipitation": "Polled live by ingestion service", "temperature_c": "Live"},
             traffic_data={"source": "TomTom Traffic Flow API", "surrounding_roads": "Polled live by ingestion service"},
-            resource_availability=self.memory_block.global_resources,
+            resource_availability=await asyncio.to_thread(self.memory_block.get_global_resources),
         )
         analysis_payload = AnalysisInputPayload(
             detection_data=json.loads(memory.detection_output.model_dump_json()),
@@ -284,13 +290,13 @@ class KhabarOrchestrator:
             except Exception as e:
                 self.log_trace(memory, "ANALYSIS_ERROR", str(e))
                 if attempt == max_retries - 1:
-                    self._trigger_fallback(memory, "Analysis Failed")
+                    await self._trigger_fallback(memory, "Analysis Failed")
                     return
 
         # ── PHASE 3: PLANNING ──
         planning_payload = PlanningInputPayload(
             analysis_data=json.loads(memory.analysis_output.model_dump_json()),
-            available_regional_resources=self.memory_block.global_resources,
+            available_regional_resources=await asyncio.to_thread(self.memory_block.get_global_resources),
         )
 
         for attempt in range(max_retries):
@@ -308,7 +314,7 @@ class KhabarOrchestrator:
             except Exception as e:
                 self.log_trace(memory, "PLANNING_ERROR", str(e))
                 if attempt == max_retries - 1:
-                    self._trigger_fallback(memory, "Planning Failed")
+                    await self._trigger_fallback(memory, "Planning Failed")
                     return
 
         # ── PHASE 4: EXECUTION ──
@@ -326,7 +332,8 @@ class KhabarOrchestrator:
 
                 # Send real Urdu alert via AlertService
                 incident_type = memory.detection_output.incident_type.value
-                alert_result = self.alerts.broadcast_crisis_alert(
+                alert_result = await asyncio.to_thread(
+                    self.alerts.broadcast_crisis_alert,
                     incident_type=incident_type,
                     location=location_text,
                     severity=memory.detection_output.severity.value,
@@ -338,21 +345,21 @@ class KhabarOrchestrator:
                     f"✅ Tools executed | Alert sent to {alert_result['recipient_count']} users | "
                     f"State: {memory.system_state.status}"
                 )
-                self.push_to_firestore(memory)
+                await asyncio.to_thread(self.push_to_firestore, memory)
                 break
             except Exception as e:
                 self.log_trace(memory, "EXECUTION_ERROR", str(e))
                 if attempt == max_retries - 1:
-                    self._trigger_fallback(memory, "Execution Failed")
+                    await self._trigger_fallback(memory, "Execution Failed")
                     return
 
         self.log_trace(memory, "PIPELINE_COMPLETE", "✅ All 4 agents completed successfully.")
-        self.push_to_firestore(memory)
+        await asyncio.to_thread(self.push_to_firestore, memory)
 
-    def _trigger_fallback(self, memory: IncidentMemory, reason: str):
+    async def _trigger_fallback(self, memory: IncidentMemory, reason: str):
         self.log_trace(memory, "FALLBACK", f"Manual override triggered: {reason}")
         memory.system_state.status = "MANUAL_REVIEW_REQUIRED"
-        self.push_to_firestore(memory)
+        await asyncio.to_thread(self.push_to_firestore, memory)
 
 
 # ── CLI test ──

@@ -1,0 +1,83 @@
+/* ═══════════════════════════════════════════════
+   Interactive Map
+   ═══════════════════════════════════════════════ */
+
+.map-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+}
+
+.leaflet-map {
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  border-radius: var(--kh-radius-xl);
+}
+
+/* Priority marker badge on map */
+.priority-marker {
+  border: none !important;
+  background: none !important;
+}
+
+/* Map Legend */
+.map-legend {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  border-radius: var(--kh-radius-sm);
+  padding: 10px 14px;
+  box-shadow: var(--kh-shadow-md);
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--kh-text-secondary);
+}
+
+.legend-color {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* Incident priority tag floating on map */
+.map-priority-tag {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1000;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.map-priority-tag .tag {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: white;
+  box-shadow: var(--kh-shadow-sm);
+}
+
+.map-priority-tag .tag.p1 { background: var(--kh-critical); }
+.map-priority-tag .tag.p2 { background: var(--kh-high); }
+.map-priority-tag .tag.p3 { background: var(--kh-medium); color: #333; }

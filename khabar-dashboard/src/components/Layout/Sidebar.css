@@ -1,0 +1,149 @@
+/* ═══════════════════════════════════════════════
+   Sidebar — Slim Deep Teal Navigation
+   ═══════════════════════════════════════════════ */
+
+.sidebar {
+  width: var(--kh-sidebar-w);
+  background: linear-gradient(180deg, var(--kh-teal-900) 0%, var(--kh-teal-800) 100%);
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - var(--kh-header-h));
+  position: sticky;
+  top: var(--kh-header-h);
+  transition: width 0.3s var(--kh-transition);
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 50;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.08);
+}
+
+.sidebar.collapsed {
+  width: var(--kh-sidebar-collapsed);
+}
+
+/* Navigation */
+.nav-menu {
+  flex: 1;
+  padding: 16px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 20px;
+  color: rgba(255, 255, 255, 0.7);
+  text-decoration: none;
+  cursor: pointer;
+  transition: all var(--kh-transition);
+  font-weight: 500;
+  font-size: 13px;
+  position: relative;
+  border: none;
+  background: none;
+  width: 100%;
+  text-align: left;
+}
+
+.nav-item:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.nav-item.active {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 0 4px 4px 0;
+  background: #4ade80;
+}
+
+.nav-item .icon {
+  font-size: 18px;
+  min-width: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.9;
+}
+
+.nav-item .label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 13px;
+}
+
+.sidebar.collapsed .nav-item .label {
+  display: none;
+}
+
+.sidebar.collapsed .nav-item {
+  justify-content: center;
+  padding: 14px;
+}
+
+/* Section separator */
+.nav-separator {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.08);
+  margin: 12px 16px;
+}
+
+/* Bottom nav items */
+.nav-bottom {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 8px 0;
+  margin-top: auto;
+}
+
+/* Toggle button */
+.sidebar-toggle {
+  padding: 12px;
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  font-size: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  transition: color var(--kh-transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-toggle:hover {
+  color: #ffffff;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .sidebar {
+    position: fixed;
+    left: 0;
+    top: var(--kh-header-h);
+    height: calc(100vh - var(--kh-header-h));
+    z-index: 99;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-toggle {
+    display: none;
+  }
+}

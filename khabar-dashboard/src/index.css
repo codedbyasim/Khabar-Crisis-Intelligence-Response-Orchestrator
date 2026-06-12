@@ -1,0 +1,177 @@
+/* ═══════════════════════════════════════════════
+   KHABAR Dashboard — Global Design System
+   Material-3 inspired, Deep Teal corporate theme
+   ═══════════════════════════════════════════════ */
+
+:root {
+  /* Primary Palette — Deep Teal Corporate */
+  --kh-teal-900: #0d3b3e;
+  --kh-teal-800: #134e4a;
+  --kh-teal-700: #185c56;
+  --kh-teal-600: #1a6b64;
+  --kh-teal-500: #1d7a72;
+  --kh-teal-400: #2dd4bf;
+  --kh-teal-50: #f0fdfa;
+
+  /* Neutral Surface */
+  --kh-surface: #f5f5f0;
+  --kh-surface-card: #ffffff;
+  --kh-surface-dim: #eeeee8;
+
+  /* Text */
+  --kh-text-primary: #1a1a1a;
+  --kh-text-secondary: #5f6368;
+  --kh-text-tertiary: #9aa0a6;
+  --kh-text-on-teal: #ffffff;
+
+  /* Priority Colors */
+  --kh-critical: #e53935;
+  --kh-high: #fb8c00;
+  --kh-medium: #fdd835;
+  --kh-low: #43a047;
+  --kh-info: #1e88e5;
+
+  /* Resource Status */
+  --kh-active: #43a047;
+  --kh-idle: #1e88e5;
+  --kh-deployed: #fb8c00;
+  --kh-offline: #9e9e9e;
+
+  /* Shadows */
+  --kh-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --kh-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --kh-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.1);
+
+  /* Radius — M3 inspired */
+  --kh-radius-sm: 12px;
+  --kh-radius-md: 16px;
+  --kh-radius-lg: 24px;
+  --kh-radius-xl: 28px;
+
+  /* Typography */
+  --kh-font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --kh-font-arabic: 'Amiri', serif;
+
+  /* Transitions */
+  --kh-transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Layout */
+  --kh-header-h: 64px;
+  --kh-sidebar-w: 200px;
+  --kh-sidebar-collapsed: 70px;
+}
+
+/* ═══════════════════════════════════════════════
+   Reset & Base
+   ═══════════════════════════════════════════════ */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html {
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  font-family: var(--kh-font);
+  background: var(--kh-surface);
+  color: var(--kh-text-primary);
+  overflow-x: hidden;
+}
+
+#root {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  text-align: left;
+  border: none;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--kh-font);
+  font-weight: 700;
+  color: var(--kh-text-primary);
+  margin: 0;
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+}
+
+button {
+  font-family: var(--kh-font);
+  cursor: pointer;
+  border: none;
+  outline: none;
+}
+
+input, select, textarea {
+  font-family: var(--kh-font);
+  outline: none;
+}
+
+/* ═══════════════════════════════════════════════
+   Scrollbar
+   ═══════════════════════════════════════════════ */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(13, 59, 62, 0.15);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(13, 59, 62, 0.3);
+}
+
+/* ═══════════════════════════════════════════════
+   Leaflet Overrides
+   ═══════════════════════════════════════════════ */
+
+.leaflet-container {
+  font-family: var(--kh-font) !important;
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: var(--kh-radius-sm) !important;
+  box-shadow: var(--kh-shadow-lg) !important;
+  font-family: var(--kh-font) !important;
+}
+
+.leaflet-popup-tip {
+  box-shadow: none !important;
+}
+
+/* ═══════════════════════════════════════════════
+   Geometric Grid Background Pattern
+   ═══════════════════════════════════════════════ */
+
+.geo-pattern {
+  background-color: var(--kh-surface);
+  background-image:
+    linear-gradient(rgba(13, 59, 62, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(13, 59, 62, 0.03) 1px, transparent 1px);
+  background-size: 40px 40px;
+}

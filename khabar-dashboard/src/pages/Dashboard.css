@@ -1,0 +1,111 @@
+/* ═══════════════════════════════════════════════
+   Dashboard Page — Main Grid Layout
+   ═══════════════════════════════════════════════ */
+
+.dashboard {
+  padding: 20px;
+  min-height: 100%;
+}
+
+/* ─── Grid ─── */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  grid-template-rows: auto auto auto auto;
+  gap: 18px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* ─── Map Card ─── */
+.map-card {
+  grid-column: 1;
+  grid-row: 1;
+  min-height: 420px;
+  border-radius: var(--kh-radius-xl);
+  overflow: hidden;
+  box-shadow: var(--kh-shadow-md);
+  background: var(--kh-surface-card);
+}
+
+/* ─── AI Recommendations — top right ─── */
+.recommendations-card {
+  grid-column: 2;
+  grid-row: 1;
+  border-radius: var(--kh-radius-xl);
+  overflow: hidden;
+  box-shadow: var(--kh-shadow-md);
+  background: var(--kh-surface-card);
+}
+
+/* ─── Resource Management — full width ─── */
+.resources-card {
+  grid-column: 1;
+  grid-row: 2;
+  border-radius: var(--kh-radius-xl);
+  overflow: hidden;
+  box-shadow: var(--kh-shadow-md);
+  background: var(--kh-surface-card);
+}
+
+/* ─── Spatial Analysis — right of resources ─── */
+.hotspots-card {
+  grid-column: 2;
+  grid-row: 2;
+  border-radius: var(--kh-radius-xl);
+  overflow: hidden;
+  box-shadow: var(--kh-shadow-md);
+  background: var(--kh-surface-card);
+}
+
+/* ─── Deployments — full width bottom ─── */
+.deployments-card {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  border-radius: var(--kh-radius-xl);
+  overflow: hidden;
+  box-shadow: var(--kh-shadow-md);
+  background: var(--kh-surface-card);
+}
+
+/* ─── Grid Item shared ─── */
+.grid-item {
+  border-radius: var(--kh-radius-xl);
+  overflow: hidden;
+}
+
+/* ═══════════════════════════════════════════════
+   Responsive
+   ═══════════════════════════════════════════════ */
+
+@media (max-width: 1200px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr 280px;
+    gap: 14px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .map-card,
+  .recommendations-card,
+  .resources-card,
+  .hotspots-card,
+  .deployments-card {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboard {
+    padding: 12px;
+  }
+
+  .dashboard-grid {
+    gap: 12px;
+  }
+}

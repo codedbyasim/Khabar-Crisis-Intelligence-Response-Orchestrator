@@ -1,0 +1,90 @@
+/* ═══════════════════════════════════════════════
+   Resource Form
+   ═══════════════════════════════════════════════ */
+
+.resource-form-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.resource-form-section h3 {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: var(--kh-text-primary);
+}
+
+.resource-form {
+  background: white;
+  border-radius: var(--kh-radius-md);
+  border: 1px solid var(--kh-surface-dim);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-input, .form-select {
+  padding: 12px 16px;
+  border: 1px solid #d1d5db;
+  border-radius: 20px; /* Fully rounded inputs */
+  font-size: 13px;
+  color: var(--kh-text-primary);
+  background: white;
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.form-input::placeholder {
+  color: #9ca3af;
+}
+
+.form-input:focus, .form-select:focus {
+  border-color: var(--kh-teal-500);
+  box-shadow: 0 0 0 3px rgba(29, 122, 114, 0.1);
+}
+
+.form-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+  padding-right: 40px;
+}
+
+.submit-button {
+  background: var(--kh-teal-900);
+  color: white;
+  border: none;
+  border-radius: 24px;
+  padding: 12px 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 8px;
+  transition: all 0.2s;
+  box-shadow: var(--kh-shadow-sm);
+}
+
+.submit-button:hover {
+  background: var(--kh-teal-800);
+  box-shadow: var(--kh-shadow-md);
+  transform: translateY(-1px);
+}
+
+.submit-button:active {
+  transform: translateY(0);
+}
+
+.submit-button:disabled {
+  background: #cbd5e1;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}

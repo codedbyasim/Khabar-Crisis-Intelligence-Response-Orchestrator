@@ -1,0 +1,102 @@
+/* ═══════════════════════════════════════════════
+   Resource Table
+   ═══════════════════════════════════════════════ */
+
+.resource-table-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.resource-table-section h3 {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: var(--kh-text-primary);
+}
+
+.table-wrapper {
+  overflow-x: auto;
+  border-radius: var(--kh-radius-md);
+  border: 1px solid var(--kh-surface-dim);
+}
+
+.resource-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  background: white;
+}
+
+.resource-table th {
+  background: var(--kh-teal-900);
+  color: white;
+  text-align: left;
+  padding: 12px 16px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.resource-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--kh-surface-dim);
+  color: var(--kh-text-primary);
+  font-weight: 500;
+}
+
+.resource-table tr:last-child td {
+  border-bottom: none;
+}
+
+.resource-table tr:nth-child(even) {
+  background: var(--kh-surface);
+}
+
+.col-id {
+  color: var(--kh-teal-700);
+  font-weight: 700;
+}
+
+.col-status.active { color: var(--kh-active); }
+.col-status.releond, .col-status.offline { color: var(--kh-critical); }
+
+/* Tactile action buttons */
+.action-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-action {
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--kh-teal-900);
+  background: rgba(45, 212, 191, 0.2); /* Light teal pill */
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s;
+}
+
+.btn-action.danger {
+  color: white;
+  background: var(--kh-critical); /* Red pill */
+}
+
+.btn-edit {
+  color: var(--kh-text-secondary);
+  background: none;
+  padding: 4px;
+}
+
+.btn-edit:hover {
+  color: var(--kh-teal-600);
+}
+
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: var(--kh-text-tertiary);
+}

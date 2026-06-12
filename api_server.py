@@ -127,7 +127,7 @@ async def report_text(request: TextReportRequest, background_tasks: BackgroundTa
 
     # Register incident immediately so polling can start
     orchestrator.memory_block.register_incident(signal)
-    firestore.save_incident(signal_id, {
+    await asyncio.to_thread(firestore.save_incident, signal_id, {
         "incident_id": signal_id,
         "status": "PROCESSING",
         "source": "text",
@@ -171,7 +171,7 @@ async def report_image(
 
     # Run Gemini Vision analysis
     try:
-        vision_result = vision.analyze_crisis_image(image_bytes, mime_type)
+        vision_result = await asyncio.to_thread(vision.analyze_crisis_image, image_bytes, mime_type)
     except Exception as e:
         logging.error(f"Vision analysis error: {e}")
         vision_result = {
@@ -198,7 +198,7 @@ async def report_image(
     background_tasks.add_task(orchestrator.process_incident, signal)
     orchestrator.memory_block.register_incident(signal)
 
-    firestore.save_incident(signal_id, {
+    await asyncio.to_thread(firestore.save_incident, signal_id, {
         "incident_id": signal_id,
         "status": "PROCESSING",
         "source": "image",
@@ -244,7 +244,7 @@ async def report_voice(
 
     # Run Gemini Speech transcription
     try:
-        speech_result = speech.transcribe_audio(audio_bytes, mime_type)
+        speech_result = await asyncio.to_thread(speech.transcribe_audio, audio_bytes, mime_type)
     except Exception as e:
         logging.error(f"Speech transcription error: {e}")
         speech_result = {
@@ -260,7 +260,7 @@ async def report_voice(
         try:
             image_bytes = await image.read()
             img_mime = image.content_type or "image/jpeg"
-            vision_result = vision.analyze_crisis_image(image_bytes, img_mime)
+            vision_result = await asyncio.to_thread(vision.analyze_crisis_image, image_bytes, img_mime)
         except Exception as e:
             logging.error(f"Image analysis during voice report failed: {e}")
             vision_result = {"description": f"Failed to analyze image: {e}"}
@@ -294,7 +294,7 @@ async def report_voice(
     background_tasks.add_task(orchestrator.process_incident, signal)
     orchestrator.memory_block.register_incident(signal)
 
-    firestore.save_incident(signal_id, {
+    await asyncio.to_thread(firestore.save_incident, signal_id, {
         "incident_id": signal_id,
         "status": "PROCESSING",
         "source": "voice",
@@ -355,6 +355,8 @@ async def get_incidents():
                 "priority": memory.detection_output.priority.value,
                 "confidence": memory.detection_output.confidence_score,
                 "location": loc_dict,
+                "lat": memory.lat,
+                "lng": memory.lng,
             })
         if memory.execution_output:
             entry["before_state"] = memory.execution_output.before_state.model_dump()
@@ -364,7 +366,7 @@ async def get_incidents():
         incidents.append(entry)
 
     # Also merge from Firestore (persisted incidents)
-    firestore_incidents = firestore.get_all_incidents()
+    firestore_incidents = await asyncio.to_thread(firestore.get_all_incidents)
     fs_ids = {i.get("id") or i.get("incident_id") for i in firestore_incidents if i}
     memory_ids = {i.get("incident_id") for i in incidents if i}
     for fi in firestore_incidents:
@@ -421,7 +423,7 @@ async def get_incident(incident_id: str):
         return result
 
     # Fall back to Firestore
-    fs_data = firestore.get_incident(incident_id)
+    fs_data = await asyncio.to_thread(firestore.get_incident, incident_id)
     if fs_data:
         return fs_data
 
@@ -437,7 +439,7 @@ async def geocode(query: str):
     """
     Geocode address/query using Google Maps Geocoding API via MapsService
     """
-    result = maps_service.geocode_location(query)
+    result = await asyncio.to_thread(maps_service.geocode_location, query)
     return {
         "success": result["found"],
         "lat": result["lat"],
@@ -456,7 +458,7 @@ async def get_resources():
     """
     Get current resource inventory and rescue team status.
     """
-    resources = firestore.get_resources()
+    resources = await asyncio.to_thread(firestore.get_resources)
     summary = {
         "rescue_teams": {"available": 0, "en_route": 0, "deployed": 0},
         "ambulances": {"available": 0, "en_route": 0},
@@ -524,37 +526,37 @@ async def execute_action(request: ActionRequest):
 
     if action_type == "dispatch":
         tool = DispatchRescueTeam(db_client)
-        response = tool.run(memory.system_state, agency=request.agency or "Rescue 1122", units=request.units or 1)
+        response = await asyncio.to_thread(tool.run, memory.system_state, agency=request.agency or "Rescue 1122", units=request.units or 1)
         memory.system_state = response.after_state
         result = response.dict()
 
     elif action_type == "alert":
         msg = request.message or f"Emergency alert for incident {request.incident_id}"
-        alert_result = alert_service.send_alert(msg, request.location or "Pakistan", incident_id=request.incident_id)
+        alert_result = await asyncio.to_thread(alert_service.send_alert, msg, request.location or "Pakistan", incident_id=request.incident_id)
         memory.system_state.public_alerts_sent += 1
         result = alert_result
 
     elif action_type == "reroute":
         tool = UpdateTrafficRoute(db_client)
-        response = tool.run(memory.system_state, close_road=request.location or "Main Road", detour_route="Alternate Route")
+        response = await asyncio.to_thread(tool.run, memory.system_state, close_road=request.location or "Main Road", detour_route="Alternate Route")
         memory.system_state = response.after_state
         result = response.dict()
 
     elif action_type == "ticket":
         tool = CreateEmergencyTicket(db_client)
-        response = tool.run(memory.system_state, target_agency=request.agency or "NDMA", details=request.message or "Emergency", severity="HIGH")
+        response = await asyncio.to_thread(tool.run, memory.system_state, target_agency=request.agency or "NDMA", details=request.message or "Emergency", severity="HIGH")
         memory.system_state = response.after_state
         result = response.dict()
 
     elif action_type == "status":
         tool = UpdateIncidentStatus(db_client)
-        response = tool.run(memory.system_state, new_status=request.new_status or "IN_PROGRESS", reason="Manual coordinator update")
+        response = await asyncio.to_thread(tool.run, memory.system_state, new_status=request.new_status or "IN_PROGRESS", reason="Manual coordinator update")
         memory.system_state = response.after_state
         result = response.dict()
     else:
         raise HTTPException(status_code=400, detail=f"Unknown action_type: {action_type}. Use: dispatch|alert|reroute|ticket|status")
 
-    orchestrator.push_to_firestore(memory)
+    await asyncio.to_thread(orchestrator.push_to_firestore, memory)
 
     return {
         "success": True,
@@ -577,7 +579,7 @@ async def export_logs(incident_id: str):
     """
     memory = orchestrator.memory_block.get_incident(incident_id)
     if not memory:
-        fs_data = firestore.get_incident(incident_id)
+        fs_data = await asyncio.to_thread(firestore.get_incident, incident_id)
         if not fs_data:
             raise HTTPException(status_code=404, detail=f"Incident '{incident_id}' not found.")
         traces = fs_data.get("traces", [])
@@ -640,13 +642,13 @@ async def chat(request: ChatRequest):
         ]
 
         # Calculate travel time and closest resource hub dynamically using Google Maps API
-        geocoded = maps_service.geocode_location(user_loc)
+        geocoded = await asyncio.to_thread(maps_service.geocode_location, user_loc)
         estimated_time = "15 to 20 minutes"
         nearest_resource = "Faizabad Rescue Hub"
         distance_str = "8.5 km"
         
         if geocoded.get("found"):
-            closest_info = maps_service.calculate_closest_rescue_hub(geocoded["lat"], geocoded["lng"], rescue_resources)
+            closest_info = await asyncio.to_thread(maps_service.calculate_closest_rescue_hub, geocoded["lat"], geocoded["lng"], rescue_resources)
             estimated_time = closest_info["duration"]
             nearest_resource = closest_info["name"]
             distance_str = closest_info["distance"]
@@ -678,7 +680,7 @@ async def chat(request: ChatRequest):
                 distance_str = "6.2 km"
 
         # Fetch active incidents from PostgreSQL database via Firestore interface to inform chatbot of live news/incidents
-        firestore_incidents = firestore.get_all_incidents()
+        firestore_incidents = await asyncio.to_thread(firestore.get_all_incidents)
         incidents_context = []
         for inc in firestore_incidents:
             if not inc:

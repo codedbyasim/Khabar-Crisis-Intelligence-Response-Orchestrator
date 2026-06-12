@@ -1,0 +1,91 @@
+/* ═══════════════════════════════════════════════
+   Deployment Tracking Table
+   ═══════════════════════════════════════════════ */
+
+.deployment-section {
+  background: var(--kh-surface-card);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.deployments-title {
+  padding: 20px 24px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--kh-text-primary);
+  border-bottom: 1px solid var(--kh-surface-dim);
+}
+
+.table-wrapper {
+  flex: 1;
+  overflow-x: auto;
+  padding: 0;
+}
+
+.deployment-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: white;
+}
+
+.deployment-table th {
+  background: var(--kh-surface-dim);
+  color: var(--kh-text-secondary);
+  text-align: left;
+  padding: 14px 24px;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.deployment-table td {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--kh-surface-dim);
+  color: var(--kh-text-primary);
+  font-weight: 500;
+}
+
+.deployment-table tr:last-child td {
+  border-bottom: none;
+}
+
+.deployment-table tr:hover {
+  background: var(--kh-surface);
+}
+
+.col-id {
+  font-weight: 600;
+  color: var(--kh-teal-700);
+}
+
+.col-location {
+  color: var(--kh-text-secondary);
+  font-family: var(--kh-mono);
+  font-size: 12px;
+}
+
+.col-target {
+  font-weight: 500;
+}
+
+.col-eta {
+  font-weight: 600;
+  color: var(--kh-high);
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 60px 20px;
+  color: var(--kh-text-tertiary);
+}
+
+.empty-state p {
+  font-size: 14px;
+}
