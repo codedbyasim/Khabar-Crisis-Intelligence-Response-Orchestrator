@@ -183,6 +183,37 @@ class KhabarFirestore:
         except Exception as e:
             logging.warning(f"[Supabase DB] Postgres down/unreachable. Incident {incident_id} saved to local memory. Error: {e}")
 
+    def update_document(self, collection_name: str, doc_id: str, data: dict):
+        logging.info(f"[Supabase DB] Updating document {doc_id} in collection {collection_name}...")
+        if collection_name == "incidents":
+            # Update local memory backup
+            if doc_id in _IN_MEMORY_INCIDENTS:
+                _IN_MEMORY_INCIDENTS[doc_id].update(data)
+            
+            try:
+                conn = get_db_connection()
+                cur = conn.cursor()
+                
+                for key, val in data.items():
+                    if key == "status":
+                        cur.execute("UPDATE incidents SET status = %s WHERE incident_id = %s;", (val, doc_id))
+                    elif key == "public_alerts_sent":
+                        cur.execute("UPDATE incidents SET public_alerts_sent = %s WHERE incident_id = %s;", (val, doc_id))
+                    else:
+                        json_str = json.dumps({key: val})
+                        cur.execute("""
+                        UPDATE incidents 
+                        SET after_state = COALESCE(after_state, '{}'::jsonb) || %s::jsonb 
+                        WHERE incident_id = %s;
+                        """, (json_str, doc_id))
+                
+                conn.commit()
+                cur.close()
+                conn.close()
+                logging.info(f"[Supabase DB] ✅ Document {doc_id} updated in Postgres successfully!")
+            except Exception as e:
+                logging.warning(f"[Supabase DB] Postgres offline/unreachable. Updated local memory for {doc_id}. Error: {e}")
+
     def get_incident(self, incident_id: str) -> Optional[dict]:
         try:
             conn = get_db_connection()

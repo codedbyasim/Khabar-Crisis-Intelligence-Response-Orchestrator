@@ -34,7 +34,7 @@ def cosine_similarity(v1, v2):
     return dot_product / (magnitude_v1 * magnitude_v2)
 
 def build_vector_db():
-    """Converts the text protocols into AI Vectors using Gemini text-embedding-004."""
+    """Converts the text protocols into AI Vectors using Gemini gemini-embedding-2."""
     global VECTOR_STORE
     if VECTOR_STORE or not client: 
         return
@@ -42,7 +42,7 @@ def build_vector_db():
     logging.info("[Knowledge Base] Building Real Vector DB using Gemini Embeddings...")
     try:
         response = client.models.embed_content(
-            model='text-embedding-004',
+            model='gemini-embedding-2',
             contents=PAKISTAN_NDMA_PROTOCOLS,
         )
         
@@ -65,7 +65,7 @@ def search_ndma_protocols(query: str) -> str:
         
     try:
         query_emb_res = client.models.embed_content(
-            model='text-embedding-004',
+            model='gemini-embedding-2',
             contents=query,
         )
         query_vector = query_emb_res.embeddings[0].values

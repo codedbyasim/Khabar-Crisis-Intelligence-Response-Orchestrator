@@ -46,6 +46,7 @@ app.*.map.json
 
 # Security — Secret Keys & Credentials (NEVER commit these)
 .env
+env
 agents/.env
 agents/*.json
 khabar-firebase-adminsdk-*.json

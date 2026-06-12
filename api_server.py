@@ -21,7 +21,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "agents"))
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), "agents", ".env"))
 
-from orchestrator import KhabarOrchestrator, RawCrisisSignal, InputSourceType
+from crew_pipeline import KhabarCrew, RawCrisisSignal, InputSourceType
 from firestore_db import db as firestore
 from gemini_vision import GeminiVision
 from gemini_speech import GeminiSpeech
@@ -69,7 +69,7 @@ app.add_middleware(
 )
 
 # ── Singletons ──
-orchestrator = KhabarOrchestrator()
+orchestrator = KhabarCrew()
 vision = GeminiVision()
 speech = GeminiSpeech()
 

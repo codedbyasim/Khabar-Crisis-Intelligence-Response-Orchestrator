@@ -1,5 +1,5 @@
 # 🚨 KHABAR (خبر) — Crisis Intelligence & Response Orchestrator (CIRO)
-### **Powered by Google Antigravity & Gemini 2.5 Flash | AISeekho Antigravity Hackathon 2026 (Challenge 3)**
+### **Powered by CrewAI & Gemini 2.5 Flash | AISeekho Hackathon 2026**
 
 ---
 
@@ -10,7 +10,7 @@ To help you understand the architectural flow, agent orchestration, and Flutter 
 ### **1.1. Overall System Architecture**
 ![Overall System Architecture](images/Overall%20System.png)
 
-### **1.2. Multi-Agent Antigravity Orchestration Pipeline**
+### **1.2. Multi-Agent CrewAI Orchestration Pipeline**
 ![Multi-Agent Pipeline](images/Agent.png)
 
 ### **1.3. Flutter Mobile Client State Flow**
@@ -36,16 +36,16 @@ Pakistan's major metropolitan cities—such as Karachi, Lahore, Rawalpindi, and 
 ## 💡 3. The KHABAR Solution
 **KHABAR** (meaning *News* or *Awareness* in Urdu) is an Agentic AI solution that addresses this problem by serving as a unified **Crisis Intelligence & Response Orchestrator (CIRO)**. 
 
-By leveraging **Google Antigravity** as the orchestrator core and **Gemini 2.5 Flash** as the reasoning engine, it transforms noisy, raw citizen signals into automated, verified, and simulated emergency response pipelines.
+By leveraging **CrewAI** as the orchestration framework and **Gemini 2.5 Flash** (via AIML API OpenAI compatibility / native GenAI SDK) as the reasoning engine, it transforms noisy, raw citizen signals into automated, verified, and simulated emergency response pipelines.
 
 ```
-[Citizen Signal (Text/Voice/Photo)] ➔ [Verification Gate] ➔ [Antigravity Pipeline] ➔ [Simulated Dispatches & Alerts]
+[Citizen Signal (Text/Voice/Photo)] ➔ [Verification Gate] ➔ [CrewAI Sequence] ➔ [Simulated Dispatches & Alerts]
 ```
 
 ---
 
-## 🤖 4. The Multi-Agent Pipeline (Google Antigravity Core)
-The coordination pipeline consists of **four distinct stages** sharing a single `SharedMemoryBlock`:
+## 🤖 4. The Multi-Agent Pipeline (CrewAI Sequential Core)
+The coordination pipeline consists of **four distinct agents** running sequentially inside a `Crew` managed by `Process.sequential` with shared task contexts:
 
 ```
 ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐
@@ -53,30 +53,31 @@ The coordination pipeline consists of **four distinct stages** sharing a single 
 └─────────────────┘      └─────────────────┘      └─────────────────┘      └─────────────────┘
 ```
 
-### **4.1. Detection Agent (`detection_agent.py`)**
+### **4.1. Detection Agent (`crew_agents.py` / `crew_tasks.py`)**
 *   **Purpose:** Classify the crisis type, extract GPS coordinates, assign priority (`P1` to `P5`), and estimate parsing confidence.
-*   **Verification & Spam Filtering:** Implements the required safety gating. If the input is conversational (e.g. *"hi"*, *"test"*, *"main biryani kha rha hoon"*), or if the weather report contradicts current live Open-Meteo readings (e.g., claiming flooding when live weather shows 0mm precipitation), the agent flags it:
+*   **Verification & Spam Filtering:** Implements the required safety gating. Uses the `WeatherValidationTool` (live Open-Meteo data) to cross-verify weather reports. If the input is conversational (e.g. *"hi"*, *"test"*), or if the weather reports contradict sensors (e.g., claiming flooding when live rain shows 0.0mm), the agent flags it:
     *   `is_verified = False`
     *   `verification_reason = "Spam or weather anomaly detected."`
 *   **Pipeline Halting:** The orchestrator aborts execution instantly on unverified reports, logging `REJECTED` in the database to prevent API billing wastage.
 
-### **4.2. Analysis Agent (`analysis_agent.py`)**
+### **4.2. Impact Analysis Agent (`crew_agents.py` / `crew_tasks.py`)**
 *   **Purpose:** Reason about the real-world impact.
-*   **Metrics Estimated:** Stranded vehicles, affected population density, and coordinates of nearby critical infrastructures (e.g., Mayo Hospital, PIMS, K-Electric grid stations).
+*   **Metrics Estimated:** Stranded vehicles, affected population density, and coordinates of nearby critical infrastructures (e.g., Mayo Hospital, PIMS, power grids) using the custom `MapsContextTool`.
 *   **Outputs:** Bilingual summaries in Romanized Urdu and English.
 
-### **4.3. Planning Agent (`planning_agent.py`)**
+### **4.3. Response Planning Agent (`crew_agents.py` / `crew_tasks.py`)**
 *   **Purpose:** Draft a Coordinated Action Plan.
-*   **RAG Vector Lookup:** Performs cosine similarity lookup on **NDMA Pakistan SOPs** (stored as vector embeddings in our knowledge base) to fetch standard protocols.
-*   **Resource Inventory Check:** Queries the Supabase PostgreSQL database to check available quantities of ambulances, fire trucks, dewatering pumps, and police units before making resource recommendations.
+*   **RAG Vector Lookup:** Performs cosine similarity lookup via `QueryKnowledgeBaseTool` using `gemini-embedding-2` on **NDMA Pakistan SOPs** to fetch standard protocols.
+*   **Resource Inventory Check:** Queries the database using the `ResourceInventoryTool` to check available quantities of ambulances, fire trucks, dewatering pumps, and police units before making resource recommendations.
 
-### **4.4. Execution Agent (`execution_agent.py`)**
+### **4.4. Response Execution Agent (`crew_agents.py` / `crew_tasks.py`)**
 *   **Purpose:** Trigger registered tools to resolve the incident and log before/after states.
-*   **Antigravity SDK Tools Executed:**
-    1.  `DispatchRescueTeam`: Reserves database resources and calculates ETAs.
-    2.  `UpdateTrafficRoute`: Sets up alternate detour routes (represented as coordinate polyline arrays).
-    3.  `BroadcastAlert`: Dispatches real-time, bilingual Firebase Push Notifications (FCM) to all registered citizen mobile apps.
-    4.  `UpdateIncidentStatus`: Finalizes status updates from `PROCESSING` to `PIPELINE_COMPLETE`.
+*   **CrewAI Tools Executed:**
+    1.  `DispatchRescueTeamTool`: Reserves database resources and calculates ETAs.
+    2.  `AllocateSuppliesTool`: Allocates physical rescue resources (e.g. pumps, kits).
+    3.  `UpdateTrafficRouteTool`: Sets up alternate detour routes (closed roads/detours).
+    4.  `BroadcastAlertTool`: Dispatches real-time, bilingual Firebase Push Notifications (FCM) via the `AlertService` to all registered citizen mobile apps.
+    5.  `UpdateIncidentStatusTool`: Finalizes status updates from `PROCESSING` to `PIPELINE_COMPLETE`.
 
 ---
 
@@ -89,7 +90,7 @@ The mobile client is built using Flutter, offering a dark-themed premium design 
 *   **Multimodal Photo Verification:** Allows capturing photos via the native camera. Includes a **text details input field** to add custom descriptions alongside images before submitting them to Gemini Vision.
 *   **Multimodal Voice Report Screen:** Bypasses basic Whisper APIs. Processes voice recordings using the **Gemini Native Audio API** to support Urdu and regional dialects, and allows **attaching photos** directly to the audio report.
 *   **Map Interface:** Renders active emergencies, resource coordinates, and visual detour routes (polylines) around the crisis centers.
-*   **Interactive Timeline & Outcome Viewer:** Shows the before/after state changes side-by-side alongside real-time trace logs from the active Antigravity agents.
+*   **Interactive Timeline & Outcome Viewer:** Shows the before/after state changes side-by-side alongside real-time trace logs from the active CrewAI agents.
 
 ---
 
@@ -99,7 +100,7 @@ The mobile client is built using Flutter, offering a dark-themed premium design 
 *   **Payload (JSON):**
     ```json
     {
-      "content": "Nullah Lai is overflowing, water is coming onto Murree Road Rawalpindi!",
+      "text": "Nullah Lai is overflowing, water is coming onto Murree Road Rawalpindi!",
       "lat": 33.6375,
       "lng": 73.0784
     }
@@ -164,32 +165,32 @@ To setup the application, create the following core relational schemas in your P
 
 ```sql
 -- Core Incidents Table
-CREATE TABLE incidents (
-    incident_id VARCHAR(50) PRIMARY KEY,
-    title VARCHAR(150),
-    description TEXT,
-    status VARCHAR(50) DEFAULT 'PROCESSING',
-    priority VARCHAR(10) DEFAULT 'P3',
+CREATE TABLE IF NOT EXISTS incidents (
+    incident_id VARCHAR(255) PRIMARY KEY,
+    incident_type VARCHAR(100),
     lat DOUBLE PRECISION,
     lng DOUBLE PRECISION,
-    source VARCHAR(50),
+    priority VARCHAR(10),
+    status VARCHAR(50),
+    confidence DOUBLE PRECISION,
+    location JSONB,
+    traces JSONB,
     before_state JSONB,
     after_state JSONB,
-    speech_analysis JSONB,
-    vision_analysis JSONB,
-    traces TEXT[],
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    state_diff JSONB,
+    public_alerts_sent INTEGER DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Resource Inventory Table
-CREATE TABLE resources (
-    resource_id VARCHAR(50) PRIMARY KEY,
-    name VARCHAR(150) NOT NULL,
-    type VARCHAR(50) NOT NULL, -- e.g. ambulance, dewatering_pump, fire_truck, rescue_team
-    quantity INTEGER DEFAULT 1,
-    status VARCHAR(50) DEFAULT 'available',
-    location JSONB -- Contains {"lat": float, "lng": float}
+CREATE TABLE IF NOT EXISTS resources (
+    resource_id VARCHAR(100) PRIMARY KEY,
+    resource_type VARCHAR(100),
+    status VARCHAR(50),
+    current_location VARCHAR(255),
+    assigned_incident VARCHAR(255),
+    quantity_available INTEGER,
+    last_updated TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
@@ -198,25 +199,17 @@ CREATE TABLE resources (
 ## 🛠️ 8. Technology Stack
 KHABAR integrates modern cloud services and robust engineering frameworks:
 
-*   **Core Logic & Orchestration:** Python, Google Antigravity SDK, FastAPI
+*   **Core Logic & Orchestration:** Python, CrewAI framework, LiteLLM, FastAPI
+*   **Package Management:** `uv` (ultra-fast Python dependency resolver)
 *   **Mobile Client:** Flutter, Dart, Google Maps SDK, Camera SDK, Audio Recorder
-*   **Reasoning LLM APIs:** Gemini 2.5 Flash (Text, Vision, Speech Native APIs)
-*   **Cloud Database:** Supabase Cloud PostgreSQL (relational storage for incidents & resource inventories)
+*   **Reasoning LLM APIs:** Gemini 2.5 Flash (via AIML API OpenAI interface + Google GenAI SDK)
+*   **Cloud Database:** Supabase Cloud PostgreSQL (relational storage for incidents & resources)
 *   **Alert Services:** Firebase Cloud Messaging (OAuth2 secure FCM notifications API)
 *   **Real-time External APIs:** Open-Meteo Weather API, TomTom Traffic Flow API, OpenStreetMap Geocoding
 
 ---
 
-## 📂 9. External Configuration & Auditing References
+## 📂 9. External Configuration & References
 For details on system setup or compliance status, refer to these workspace documents:
 
-*   **[Environment Setup & DB Schemas (Setup.md)](file:///f:/khabar/Setup.md):** Complete installation guide, database queries, and env configuration variables.
-*   **[SRS Compliance Audit Report (ciro_audit_report.md)](file:///C:/Users/HCC/.gemini/antigravity/brain/1b8b626a-eb69-46d4-8557-25cd92d7cdca/ciro_audit_report.md):** Analysis of the implementation coverage against all requirements.
-*   **[Hackathon Master Audit Key (challenge_compliance_master_key.md)](file:///C:/Users/HCC/.gemini/antigravity/brain/1b8b626a-eb69-46d4-8557-25cd92d7cdca/challenge_compliance_master_key.md):** Compliance master matrix reviewing each evaluation metric.
-
----
-
-## 📝 10. Core Platform Assumptions
-1.  **Map Corridor Simulations:** Due to API quota limits and routing complexities of rendering live routes via Google Maps, the detour corridor is visually simulated in the Flutter `MapScreen` using coordinate boundaries relative to the incident center.
-2.  **Emergency Dispatch Capacity:** The system assumes a baseline resource capacity (WASA, Rescue 1122, K-Electric) in the database. In case of resource exhaustion, the Planning Agent automatically escalates incidents to `STANDBY` until units are released by the dispatcher.
-3.  **Human-in-the-Loop Override:** While the pipeline is designed to be fully autonomous, P3-P5 priority events in production would require manual dispatcher confirmation before the Execution Agent triggers actual tool dispatches.
+*   **[Environment Setup & DB Schemas (Setup.md)](Setup.md):** Complete installation guide, database queries, and env configuration variables.

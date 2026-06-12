@@ -176,7 +176,7 @@ async def _submit_alert(orchestrator, firestore, scenario: dict):
     logging.info(f"[Automated Ingestion] Submitting Alert: {scenario['content'][:80]}...")
     try:
         from datetime import datetime, timezone
-        from orchestrator import RawCrisisSignal, InputSourceType
+        from schemas import RawCrisisSignal, InputSourceType
         
         signal_id = f"SIG-{int(datetime.now().timestamp())}-TXT"
         signal = RawCrisisSignal(

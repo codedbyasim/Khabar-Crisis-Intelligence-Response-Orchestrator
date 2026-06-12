@@ -16,8 +16,10 @@ Ensure you have the following installed on your local machine:
 ## 🔑 2. Get API Keys & Setup Environment Variables
 
 ### **Step 2.1: Create Backend Environment File**
-Create a new file named `.env` inside the `agents/` folder:
-`f:\khabar\agents\.env`
+Create a new file named `.env` inside the root folder:
+`d:\My Playground\Khabar-Crisis-Intelligence-Response-Orchestrator\.env`
+And copy it to the `agents/` directory:
+`d:\My Playground\Khabar-Crisis-Intelligence-Response-Orchestrator\agents\.env`
 
 Populate it with the following configuration:
 ```env
@@ -35,11 +37,14 @@ TOMTOM_API_KEY=your_tomtom_key_here
 
 # Weather API Key (Optional, Open-Meteo runs free without a key)
 OPENWEATHER_API_KEY=your_openweather_key_here
+
+# AIML API Key (Used as the backend for CrewAI custom models)
+AIML_API_KEY=your_aiml_api_key_here
 ```
 
 ### **Step 2.2: Add Firebase Credentials**
 Ensure your Firebase Admin service account key JSON file is placed at:
-`f:\khabar\agents\khabar-46771-firebase-adminsdk-fbsvc-e3117a9fbb.json`
+`d:\My Playground\Khabar-Crisis-Intelligence-Response-Orchestrator\agents\khabar-46771-firebase-adminsdk-fbsvc-e3117a9fbb.json`
 
 *(This is used for sending real-time FCM bilingual alerts to your mobile devices).*
 
@@ -85,16 +90,14 @@ CREATE TABLE IF NOT EXISTS resources (
 
 1. **Open a terminal in the root directory:**
    ```powershell
-   cd f:\khabar
+   cd "d:\My Playground\Khabar-Crisis-Intelligence-Response-Orchestrator"
    ```
 
 2. **Create and activate a virtual environment:**
    ```powershell
    python -m venv venv
-   # On Windows:
+   # Activate on Windows:
    .\venv\Scripts\activate
-   # On macOS/Linux:
-   source venv/bin/activate
    ```
 
 3. **Install python packages:**
@@ -104,19 +107,19 @@ CREATE TABLE IF NOT EXISTS resources (
 
 4. **Seed database resources (Run once):**
    ```powershell
-   python seed_resources.py
+   venv\Scripts\python.exe seed_resources.py
    ```
 
 5. **Start the API Server:**
    ```powershell
-   python api_server.py
+   venv\Scripts\python.exe api_server.py
    ```
    *The API gateway runs on `http://127.0.0.1:8000`*
 
 6. **Start the Web Dashboard:**
    *Open a new terminal tab, activate the virtual environment, and run:*
    ```powershell
-   python dashboard_server.py
+   venv\Scripts\python.exe dashboard_server.py
    ```
    *Access the web console at `http://127.0.0.1:8001`*
 
