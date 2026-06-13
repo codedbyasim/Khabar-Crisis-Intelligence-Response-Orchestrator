@@ -1335,7 +1335,7 @@ RULES:
                 model=model,
                 messages=messages,
                 temperature=0.3,
-                timeout=30.0,
+                timeout=60.0,
             )
             response_text = response.choices[0].message.content
             aiml_success = True
