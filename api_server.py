@@ -1200,6 +1200,11 @@ async def admin_chat(request: AdminChatRequest):
     
     # In-memory incidents (currently processing)
     for inc_id, memory in orchestrator.memory_block.active_incidents.items():
+        # Only show active/pending incidents to the coordinator chatbot to keep prompt small
+        status = memory.system_state.status
+        if status.upper() in ("RESOLVED", "CLOSED", "REJECTED"):
+            continue
+            
         loc_str = "Unknown"
         if memory.detection_output:
             loc = memory.detection_output.detected_location
@@ -1213,7 +1218,7 @@ async def admin_chat(request: AdminChatRequest):
             "incident_id": inc_id,
             "type": memory.detection_output.incident_type.value if memory.detection_output else "Unknown",
             "priority": memory.detection_output.priority.value if memory.detection_output else "P3",
-            "status": memory.system_state.status,
+            "status": status,
             "location": loc_str,
             "active_units": memory.system_state.active_units,
             "closed_roads": memory.system_state.closed_roads,
@@ -1228,13 +1233,17 @@ async def admin_chat(request: AdminChatRequest):
             if fi:
                 inc_id = fi.get("incident_id")
                 if inc_id and inc_id not in memory_ids:
+                    status = fi.get("status") or "ACTIVE"
+                    # Only show active/pending incidents to the coordinator chatbot
+                    if status.upper() in ("RESOLVED", "CLOSED", "REJECTED"):
+                        continue
                     loc = fi.get("location") or {}
                     loc_str = loc.get("address") or loc.get("location_name") or f"lat: {fi.get('lat')}, lng: {fi.get('lng')}"
                     active_incidents.append({
                         "incident_id": inc_id,
                         "type": fi.get("incident_type") or "Emergency",
                         "priority": fi.get("priority") or "P3",
-                        "status": fi.get("status") or "ACTIVE",
+                        "status": status,
                         "location": loc_str,
                         "active_units": fi.get("active_units") or 0,
                         "closed_roads": fi.get("closed_roads") or [],
@@ -1243,7 +1252,8 @@ async def admin_chat(request: AdminChatRequest):
     except Exception as e:
         logging.error(f"Error fetching incidents for admin chat: {e}")
 
-    # Format incidents string
+    # Format incidents string (Limit to last 15 active incidents to keep prompt size small)
+    active_incidents = active_incidents[-15:]
     incidents_list_str = ""
     for inc in active_incidents:
         incidents_list_str += f"- ID: {inc['incident_id']} | Type: {inc['type']} | Priority: {inc['priority']} | Status: {inc['status']} | Location: {inc['location']} | Units Assigned: {inc['active_units']} | Closed Roads: {inc['closed_roads']}\n"
@@ -1256,8 +1266,9 @@ async def admin_chat(request: AdminChatRequest):
     except Exception:
         resources = []
         
+    # Limit to active resources or just limit overall list length to keep prompt small
     resources_list_str = ""
-    for res in resources:
+    for res in resources[:20]:
         resources_list_str += f"- ID: {res.get('resource_id')} | Name: {res.get('name')} | Type: {res.get('resource_type') or res.get('type')} | Status: {res.get('status')} | Quantity: {res.get('quantity_available', res.get('quantity', 1))}\n"
     if not resources_list_str:
         resources_list_str = "No resources cataloged in database inventory."
@@ -1301,8 +1312,10 @@ RULES:
 4. Keep a highly professional, prompt, and direct tone. Match the language the user speaks (English, Urdu, or Roman Urdu).
 """
 
+    # Limit chat history to last 6 messages (3 conversation turns) to drastically reduce prefill prompt size
+    history_to_send = request.history[-6:]
     messages = [{"role": "system", "content": system_prompt}]
-    for h in request.history:
+    for h in history_to_send:
         role = "assistant" if h.get("role") in ("assistant", "model") else "user"
         messages.append({"role": role, "content": h.get("content", "")})
     messages.append({"role": "user", "content": request.message})
@@ -1317,13 +1330,12 @@ RULES:
             client = orchestrator.detection_agent.llm_client.client
             model = orchestrator.detection_agent.llm_client.model
             
-            response = await asyncio.wait_for(
-                client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    temperature=0.3,
-                ),
-                timeout=15.0
+            # Using client's timeout parameter directly (more robust than asyncio.wait_for)
+            response = await client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0.3,
+                timeout=30.0,
             )
             response_text = response.choices[0].message.content
             aiml_success = True
