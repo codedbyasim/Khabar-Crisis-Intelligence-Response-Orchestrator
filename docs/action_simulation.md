@@ -34,7 +34,7 @@ response = tool.run(state, agency="Rescue 1122", units=2)
 
 **State Change:**
 - `active_units["rescue_team"]` += 2
-- Updates Supabase `resources` table (status → "en_route")
+- Updates Supabase `resources` table: matching available units set to `"deployed"`, `assigned_incident` → incident ID
 - Logs: `"2 units dispatched from Rescue 1122"`
 
 ---
@@ -175,3 +175,7 @@ POST /action/execute
 | `reroute` | `UpdateTrafficRoute` |
 | `ticket` | `CreateEmergencyTicket` |
 | `status` | `UpdateIncidentStatus` |
+| `add_resource` | Register new resource unit in DB |
+| `clear_database` | Clear all incidents and reset system |
+
+> **Admin Chatbot Shortcut:** All of the above can also be triggered by typing natural language commands in the AI Command Assistant (dashboard chatbot), which parses `[EXECUTE: ...]` tags from the AI response.

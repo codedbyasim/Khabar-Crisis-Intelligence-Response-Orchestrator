@@ -4,31 +4,48 @@ KHABAR integrates multiple external services for real-time crisis intelligence. 
 
 ---
 
-## 1. 🤖 AIML API — Primary LLM (All Agents)
+## 1. 🤖 AIML API — Primary LLM (All Agents + Admin Chatbot)
 
 **File:** `agents/llm_client.py`  
 **Endpoint:** `https://api.aimlapi.com/v1`  
-**Model:** `gemini/gemini-2.5-flash`  
+**Model:** `google/gemini-2.5-flash`  ✅ (verified working — returns HTTP 200)  
 **Protocol:** OpenAI-compatible `AsyncOpenAI` client  
-**Auth:** `AIML_API_KEY` from `agents/.env`
+**Auth:** `AIML_API_KEY` from `agents/.env`  
+**SDK Retries:** `max_retries=0` — disabled to prevent double-retry with our manual loop
 
-Used by all 4 agents for JSON-structured reasoning. Supports:
-- Text generation (JSON mode enforced)
-- Vision analysis (base64 image encoding)
-- Audio transcription (Whisper API)
+Used by:
+- All 4 pipeline agents (`llm_client.py`) for JSON-structured reasoning
+- Vision analysis (`gemini_vision.py`) for image crisis detection
+- Audio transcription (`gemini_speech.py`) for Whisper + analysis
+- Admin dashboard chatbot (`/admin/chat`) for coordinator AI commands
 
-**Fallback:** Local Gemma GGUF → Hardcoded JSON (see [local_model.md](local_model.md))
+**Retry Strategy:**
+```
+SDK auto-retry: DISABLED (max_retries=0)
+Manual retry:   3 attempts × asyncio.wait_for(timeout=45s)
+On exhaustion:  Falls back to Local GGUF → Hardcoded JSON
+```
+
+**Fallback:** Local GGUF model → Hardcoded JSON (see [local_model.md](local_model.md))
 
 ---
 
-## 2. 🏠 Local Gemma GGUF — Offline LLM
+## 2. 🏠 Local GGUF Models — Offline LLM
 
 **File:** `agents/local_model.py`  
-**Model:** `models/gemma-4-E2B-it-UD-IQ2_M.gguf` (2.3 GB)  
 **Engine:** `llama-cpp-python` (CPU inference, no GPU required)  
 **Internet:** ❌ Not required
 
-Used when AIML API is unreachable. Also powers the `/local-chat` endpoint for offline Flutter chat. See [local_model.md](local_model.md) for full details.
+| Model | File | Size | Used For |
+|---|---|---|---|
+| Qwen2.5-0.5B-Instruct | `models/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf` | ~380 MB | Primary local fallback — fast, lightweight |
+| Gemma 4-E2B | `models/gemma-4-E2B-it-UD-IQ2_M.gguf` | ~2.3 GB | Secondary local fallback — larger context |
+
+Used when AIML API is unreachable. Also powers:
+- `/local-chat` endpoint for offline Flutter citizen chat
+- `/admin/chat` local fallback when online AI unavailable
+
+See [local_model.md](local_model.md) for full configuration details.
 
 ---
 
@@ -40,9 +57,11 @@ Used when AIML API is unreachable. Also powers the `/local-chat` endpoint for of
 
 Two core tables:
 - `incidents` — all reported disasters with full agent traces, before/after states
-- `resources` — live inventory of ambulances, rescue teams, fire trucks, dewatering pumps
+- `resources` — live inventory with `assigned_incident` column (auto-created via self-healing `ALTER TABLE` if missing)
 
 **Self-Healing Fallback:** If Supabase is offline/paused, all reads and writes automatically use thread-safe in-memory Python dictionaries (`_IN_MEMORY_INCIDENTS`, `_IN_MEMORY_RESOURCES`). The system never crashes due to a database outage.
+
+**Resource Allocation Tracking:** When a resource is dispatched via `POST /action/execute` or the admin chatbot, its `assigned_incident` field is automatically updated to link it to the incident ID.
 
 ---
 
@@ -62,8 +81,8 @@ Three APIs used:
 **Geocoding Fallback Chain:**
 ```
 Google Maps Geocoding API
-        ↓ (API key missing or failed)
-Local Pakistan City Dictionary  (33 pre-loaded locations, instant)
+        ↓ (API key missing or request failed)
+Local Pakistan City Dictionary  (33 pre-loaded locations, instant, no API key)
         ↓ (location not in dictionary)
 OpenStreetMap Nominatim  (free, no key, SSL-verified)
         ↓ (all failed)
@@ -77,7 +96,7 @@ Default: Islamabad center (33.6844, 73.0479)
 **File:** `agents/automated_ingestion.py`  
 **API:** `https://api.open-meteo.com/v1/forecast`  
 **Auth:** No API key required (free public API)  
-**Poll Interval:** Every 15 minutes (background task)
+**Poll Interval:** Every 15 minutes (background task — disabled by default)
 
 Fetches: temperature, precipitation (mm), rain flag for Islamabad (33.6844°N, 73.0479°E).
 
@@ -93,26 +112,26 @@ Fetches: temperature, precipitation (mm), rain flag for Islamabad (33.6844°N, 7
 
 **File:** `agents/automated_ingestion.py`  
 **Auth:** `TOMTOM_API_KEY` from `agents/.env`  
-**Poll Interval:** Every 10 minutes (background task)
+**Poll Interval:** Every 10 minutes (background task — disabled by default)
 
-Fetches current traffic flow speed vs free-flow speed. If current speed is significantly below free-flow, a road blockage signal is auto-generated.
+Fetches current traffic flow speed vs free-flow speed ratio. If current speed is significantly below free-flow (< 30% of normal), a road blockage crisis signal is auto-generated.
 
 ---
 
-## 7. 📰 SerpAPI — Google News Feed
+## 7. 📰 Google News RSS — Live News Feed
 
-**File:** `agents/alert_service.py` (invoked via `/live-news` endpoint)  
-**Auth:** `SERPAPI_KEY` from `agents/.env`
+**File:** `agents/automated_ingestion.py` + `api_server.py`  
+**API:** Google News RSS (no API key required)  
+**Query:** `Islamabad Rawalpindi (emergency OR floods OR rain OR weather OR crisis OR disaster) when:7d`
 
-Query: `"Islamabad Rawalpindi rain flood WASA OR Rescue 1122 OR alert when:7d"`  
 Returns up to 12 recent crisis news items with:
-- English title (cleaned)
-- Urdu translated title (template-mapped by keyword)
-- Source name
-- Publication date
+- English title (cleaned from RSS)
+- Source name and publication date
 - Article link
 
-**Fallback:** Returns empty list `[]` if SerpAPI is unavailable. Flutter app handles this gracefully.
+**Fallback:** Returns empty list `[]` if Google News RSS is unreachable. Flutter app handles this gracefully.
+
+> **Note:** SerpAPI was previously used for news. The system now uses the free Google News RSS endpoint directly (no API key required, no quota limits).
 
 ---
 
@@ -120,7 +139,7 @@ Returns up to 12 recent crisis news items with:
 
 **File:** `agents/alert_service.py`  
 **SDK:** `firebase-admin` Python package  
-**Auth:** `agents/khabar-46771-firebase-adminsdk-fbsvc-e3117a9fbb.json`  
+**Auth:** `agents/khabar-46771-firebase-adminsdk-fbsvc-e3117a9fbb.json` (gitignored)  
 **Topic:** `khabar_public_alerts` (all Flutter users auto-subscribed)
 
 See [fcm_notifications.md](fcm_notifications.md) for full FCM setup details.
@@ -131,11 +150,12 @@ See [fcm_notifications.md](fcm_notifications.md) for full FCM setup details.
 
 | Integration | Required | Fallback Available |
 |---|---|---|
-| AIML API | ✅ Required | Local Gemma GGUF |
-| Local Gemma GGUF | Optional | Hardcoded JSON |
+| AIML API (`google/gemini-2.5-flash`) | ✅ Required | Local GGUF models |
+| Local Qwen GGUF (380MB) | Recommended | Hardcoded JSON |
+| Local Gemma GGUF (2.3GB) | Optional | Qwen GGUF or JSON |
 | Supabase PostgreSQL | Recommended | In-Memory Store |
-| Google Maps API | Optional | Local dict + OSM |
-| Open-Meteo | Optional | Skip weather check |
-| TomTom Traffic | Optional | Skip traffic check |
-| SerpAPI News | Optional | Empty list [] |
-| Firebase FCM | Optional | Simulated delivery |
+| Google Maps API | Optional | Local dict + OSM Nominatim |
+| Open-Meteo Weather | Optional | Skip weather cross-check |
+| TomTom Traffic | Optional | Skip traffic auto-ingestion |
+| Google News RSS | Optional | Empty list `[]` |
+| Firebase FCM | Optional | Simulated delivery log |

@@ -25,9 +25,12 @@ flowchart LR
 Every agent calls `LLMClient.generate_json()` which uses this 3-tier fallback:
 
 ```
-AIML API (Gemini 2.5 Flash)  →  Local Gemma GGUF  →  Hardcoded JSON
-         ↑                              ↑                     ↑
-   agents/llm_client.py        agents/local_model.py   agents/llm_client.py
+AIML API (google/gemini-2.5-flash)  →  Local GGUF  →  Hardcoded JSON
+         ↑                                  ↑                ↑
+   agents/llm_client.py           agents/local_model.py  agents/llm_client.py
+
+SDK auto-retries: DISABLED (max_retries=0 on all OpenAI client instances)
+Manual retries:   3 attempts × asyncio.wait_for(timeout=45s)
 ```
 
 ---
@@ -108,13 +111,13 @@ AIML API (Gemini 2.5 Flash)  →  Local Gemma GGUF  →  Hardcoded JSON
 **Input:** Stage 2 `AnalysisOutput` + current `SystemState`
 
 **Key Operations:**
-1. **RAG Lookup:** Cosine similarity search against Pakistan NDMA SOP knowledge base to fetch applicable emergency protocols
+1. **RAG Lookup:** Cosine similarity search against Pakistan NDMA SOP knowledge base (`agents/knowledge_base_data.py`) to fetch applicable emergency protocols
 2. **Resource Inventory Check:** Queries Supabase for available:
    - Ambulances, fire trucks, dewatering pumps, rescue teams, police units
 3. Generates `RecommendedAction` list with:
    - `action_type`: dispatch / alert / reroute / ticket / status_update
    - `priority`: IMMEDIATE / HIGH / MEDIUM
-   - `target_agency`: Rescue 1122 / WASA / Traffic Police / NDMA
+   - `target_agency`: Rescue 1122 / WASA / Traffic Police / NDMA / Edhi Foundation
    - `required_units`: integer count
 
 **Output Schema (`PlanningOutput`):**
@@ -155,11 +158,12 @@ AIML API (Gemini 2.5 Flash)  →  Local Gemma GGUF  →  Hardcoded JSON
 4. Generates realistic execution logs with timestamps
 5. Sends real Firebase FCM push notification if `broadcast_alert` is in plan
 6. Writes complete incident record to Supabase
+7. Auto-allocates matching database resources (sets `assigned_incident` + status `deployed`)
 
 **Available Tools (`tool_system.py`):**
 | Tool | Action |
 |---|---|
-| `dispatch_rescue_team(agency, units)` | Deploys units, updates resource inventory |
+| `dispatch_rescue_team(agency, units)` | Deploys units, updates resource inventory, sets `assigned_incident` |
 | `allocate_supplies(item_type, quantity)` | Reserves medical/food supplies |
 | `broadcast_alert(message, audience)` | Sends FCM push via `AlertService` |
 | `update_traffic_route(close_road, detour)` | Updates closed roads & detours |
@@ -176,7 +180,7 @@ AIML API (Gemini 2.5 Flash)  →  Local Gemma GGUF  →  Hardcoded JSON
       "action": "dispatch_rescue_team",
       "agency": "Rescue 1122",
       "success": true,
-      "tool_results": [{"tool_name": "dispatch_rescue_team", "status": "OK", "output": {...}}]
+      "tool_results": [{"tool_name": "dispatch_rescue_team", "status": "OK"}]
     }
   ],
   "before_state": {"active_units": {"ambulance": 0, "rescue_team": 0}},
@@ -213,15 +217,15 @@ The orchestrator writes each agent's output to memory and passes it to the next 
 
 ---
 
-## 🤝 Hybrid CrewAI Orchestration
+## 🤝 Hybrid CrewAI Orchestration (`agents/crew_orchestrator.py`)
 
-The pipeline coordination is managed by a **CrewAI Sequential Crew** (`agents/crew_orchestrator.py`):
+The pipeline coordination is managed by a **CrewAI Sequential Crew**:
 
 1. **Crew Setup:** Instantiates four CrewAI `Agent`s representing Detection, Analysis, Planning, and Execution.
 2. **LLM Connection:** Configures a `crewai.LLM` object pointing to the AIML API endpoint:
-   - **Model:** `openai/google/gemini-2.5-flash`
+   - **Model:** `google/gemini-2.5-flash`
    - **Base URL:** `https://api.aimlapi.com/v1`
    - **API Key:** `AIML_API_KEY` (OpenAI-compatible)
-3. **Task Coordination:** Four CrewAI `Task` objects run sequentially. Each task executes its corresponding custom agent's process as a synchronous tool execution wrapped in `asyncio.run()`.
+3. **Task Coordination:** Four CrewAI `Task` objects run sequentially. Each task executes its corresponding custom agent's `process()` as a synchronous tool execution wrapped in `asyncio.run()`.
 4. **Context Passing:** Outputs of preceding tasks are seamlessly carried forward to subsequent tasks as context strings.
-
+5. **Fallback:** If CrewAI orchestration fails, the orchestrator falls back to direct sequential agent execution.
