@@ -1203,7 +1203,12 @@ async def admin_chat(request: AdminChatRequest):
         loc_str = "Unknown"
         if memory.detection_output:
             loc = memory.detection_output.detected_location
-            loc_str = f"{loc.area or ''} {loc.city or ''} (lat: {memory.detection_output.detected_location.latitude}, lng: {memory.detection_output.detected_location.longitude})"
+            lat = memory.raw_signal.metadata.get("lat") if memory.raw_signal and memory.raw_signal.metadata else None
+            lng = memory.raw_signal.metadata.get("lng") if memory.raw_signal and memory.raw_signal.metadata else None
+            lat_lng_str = f" (lat: {lat}, lng: {lng})" if lat is not None and lng is not None else ""
+            loc_str = f"{loc.area or ''} {loc.city or ''}{lat_lng_str}".strip()
+            if not loc_str:
+                loc_str = "Unknown"
         active_incidents.append({
             "incident_id": inc_id,
             "type": memory.detection_output.incident_type.value if memory.detection_output else "Unknown",
