@@ -45,6 +45,7 @@ root_logger.addHandler(file_handler)
 
 from automated_ingestion import start_automated_ingestion
 import asyncio
+import httpx
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -1323,41 +1324,56 @@ RULES:
     response_text = ""
     command_executed = None
     
-    # Try online AIML API only (no local fallback, fast response)
+    # Try online AIML API only — use httpx directly to avoid AsyncOpenAI connection pool issues
     aiml_success = False
-    for attempt in range(2):
+    retry_delays = [1.0, 3.0, 5.0]  # Exponential backoff in seconds
+    for attempt in range(3):
         try:
-            # Use a fresh AsyncOpenAI instance for each call to avoid stale connection pool/keep-alive issues on long-lived connections
-            from openai import AsyncOpenAI
             api_key = orchestrator.detection_agent.llm_client.api_key
-            client = AsyncOpenAI(
-                base_url="https://api.aimlapi.com/v1",
-                api_key=api_key,
-                max_retries=0,
-            )
             model = orchestrator.detection_agent.llm_client.model
-            
-            # Using client's timeout parameter directly (more robust than asyncio.wait_for)
-            response = await client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=0.3,
-                timeout=60.0,
-            )
-            response_text = response.choices[0].message.content
-            aiml_success = True
-            logging.info(f"[Admin Chat] ✅ Successful response from AIML API (Attempt {attempt+1})")
-            break
+
+            payload = {
+                "model": model,
+                "messages": messages,
+                "temperature": 0.3,
+            }
+
+            # Create a fresh client per attempt — prevents stale connection pool issues
+            async with httpx.AsyncClient(
+                base_url="https://api.aimlapi.com",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                timeout=httpx.Timeout(connect=10.0, read=65.0, write=10.0, pool=5.0),
+            ) as http_client:
+                resp = await http_client.post("/v1/chat/completions", json=payload)
+                resp.raise_for_status()
+                resp_data = resp.json()
+                response_text = resp_data["choices"][0]["message"]["content"]
+                aiml_success = True
+                logging.info(f"[Admin Chat] ✅ Successful response from AIML API (Attempt {attempt+1})")
+                break
+
+        except httpx.ReadTimeout:
+            logging.warning(f"[Admin Chat] Attempt {attempt+1} timed out (read timeout).")
+        except httpx.ConnectError as e:
+            logging.warning(f"[Admin Chat] Attempt {attempt+1} connection error: {e}")
+        except httpx.HTTPStatusError as e:
+            logging.warning(f"[Admin Chat] Attempt {attempt+1} HTTP error {e.response.status_code}: {e.response.text[:200]}")
         except Exception as e:
-            logging.warning(f"[Admin Chat] Attempt {attempt+1} failed or timed out: {e}")
-            if attempt < 1:
-                await asyncio.sleep(0.5)
+            logging.warning(f"[Admin Chat] Attempt {attempt+1} unexpected error: {type(e).__name__}: {e}")
+
+        if attempt < 2:
+            delay = retry_delays[attempt]
+            logging.info(f"[Admin Chat] Retrying in {delay:.0f}s... (attempt {attempt+2}/3)")
+            await asyncio.sleep(delay)
 
     if not aiml_success:
         logging.error("[Admin Chat] All AIML API attempts failed or timed out.")
         return {
             "success": False,
-            "error": "AIML API is temporarily slow or offline. Please try again.",
+            "error": "AIML API is temporarily unavailable. Please retry in a moment.",
             "response": None,
         }
 
