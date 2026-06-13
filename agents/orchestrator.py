@@ -1,6 +1,6 @@
 """
 orchestrator.py — KHABAR 4-Agent pipeline orchestrator.
-Updated to use KhabarFirestore, MapsService, AlertService, and Google Gemini SDK.
+Uses AIML API (OpenAI-compatible) via LLMClient, MapsService, AlertService.
 """
 import json
 import logging
@@ -317,12 +317,22 @@ class KhabarOrchestrator:
             current_system_state=memory.system_state,
         )
 
+        # Immediately mark as EXECUTING and push to Firestore so the app shows progress
+        memory.system_state.status = "EXECUTING"
+        self.push_to_firestore(memory)
+
         for attempt in range(max_retries):
             try:
                 self.log_trace(memory, "EXECUTION", f"Attempt {attempt+1}: Dispatching tools...")
-                execution_result = await self.execution_agent.process_execution(execution_payload)
+                # Wrap entire execution in a 120s ceiling — prevents indefinite hangs and gives retries headroom
+                execution_result = await asyncio.wait_for(
+                    self.execution_agent.process_execution(execution_payload),
+                    timeout=120,
+                )
                 memory.execution_output = execution_result
                 memory.system_state = execution_result.after_state
+                # Ensure incident_id is preserved after state swap
+                memory.system_state.incident_id = memory.incident_id
 
                 # Send real Urdu alert via AlertService
                 incident_type = memory.detection_output.incident_type.value
@@ -340,6 +350,11 @@ class KhabarOrchestrator:
                 )
                 self.push_to_firestore(memory)
                 break
+            except asyncio.TimeoutError:
+                self.log_trace(memory, "EXECUTION_ERROR", "Execution timed out after 90s — using fallback")
+                if attempt == max_retries - 1:
+                    self._trigger_fallback(memory, "Execution Timeout")
+                    return
             except Exception as e:
                 self.log_trace(memory, "EXECUTION_ERROR", str(e))
                 if attempt == max_retries - 1:

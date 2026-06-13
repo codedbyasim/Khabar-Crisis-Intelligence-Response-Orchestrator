@@ -67,3 +67,8 @@ pip-delete-this-directory.txt
 scratch/
 docs/scratch/
 *.bak
+
+# Local model folder & large files
+models/
+.antigravity/
+dashboard.zip

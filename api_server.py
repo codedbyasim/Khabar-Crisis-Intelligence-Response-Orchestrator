@@ -21,7 +21,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), "agents"))
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), "agents", ".env"))
 
-from orchestrator import KhabarOrchestrator, RawCrisisSignal, InputSourceType
+from crew_orchestrator import KhabarCrewOrchestrator, RawCrisisSignal, InputSourceType
 from firestore_db import db as firestore
 from gemini_vision import GeminiVision
 from gemini_speech import GeminiSpeech
@@ -55,7 +55,7 @@ async def lifespan(app: FastAPI):
 # ── App ──
 app = FastAPI(
     title="KHABAR Crisis Intelligence API",
-    description="Google Gemini-powered 4-agent crisis response pipeline",
+    description="AIML API + Local Gemma 4-agent crisis response pipeline",
     version="2.0.0",
     lifespan=lifespan,
 )
@@ -69,7 +69,7 @@ app.add_middleware(
 )
 
 # ── Singletons ──
-orchestrator = KhabarOrchestrator()
+orchestrator = KhabarCrewOrchestrator()
 vision = GeminiVision()
 speech = GeminiSpeech()
 
@@ -82,7 +82,7 @@ async def root():
         "status": "online",
         "system": "KHABAR Crisis Intelligence & Response Orchestrator",
         "version": "2.0.0",
-        "ai_backend": "Google Gemini 2.5 Flash",
+        "ai_backend": "AIML API (Gemini 2.5 Flash) + Local Gemma Fallback",
         "endpoints": {
             "POST /report/text":     "Submit text crisis report (Urdu/English/Roman Urdu)",
             "POST /report/image":    "Submit photo for Gemini Vision damage assessment",
@@ -95,6 +95,112 @@ async def root():
         },
         "docs": "/docs",
     }
+
+
+@app.get("/health")
+async def health():
+    """
+    Check if the server and its internet connection are active.
+    """
+    import httpx
+    has_internet = False
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get("https://www.google.com", timeout=2.0)
+            has_internet = response.status_code == 200
+    except Exception:
+        has_internet = False
+
+    return {
+        "status": "online",
+        "internet": has_internet,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+
+@app.get("/live-news")
+async def live_news():
+    """
+    Fetch live emergency and weather news for Islamabad and Rawalpindi from Google News RSS.
+    """
+    import httpx
+    import xml.etree.ElementTree as ET
+    url = "https://news.google.com/rss/search?q=Islamabad%20Rawalpindi%20(emergency%20OR%20floods%20OR%20rain%20OR%20weather%20OR%20crisis%20OR%20disaster)%20when:7d&hl=en-PK&gl=PK&ceid=PK:en"
+    
+    loaded_articles = []
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, timeout=5.0)
+            if response.status_code == 200:
+                root = ET.fromstring(response.text)
+                items = root.findall(".//item")
+                for item in items[:10]:
+                    title_elem = item.find("title")
+                    link_elem = item.find("link")
+                    pub_date_elem = item.find("pubDate")
+                    
+                    title = title_elem.text if title_elem is not None else "Emergency Report"
+                    link = link_elem.text if link_elem is not None else ""
+                    pub_date = pub_date_elem.text if pub_date_elem is not None else "Just now"
+                    
+                    source_name = "Google News"
+                    clean_title = title
+                    if " - " in title:
+                        parts = title.rsplit(" - ", 1)
+                        clean_title = parts[0].strip()
+                        source_name = parts[1].strip()
+                    
+                    urdu_title = "پاکستان ہنگامی الرٹ رپورٹ"
+                    lower_title = clean_title.lower()
+                    if "rain" in lower_title or "storm" in lower_title:
+                        urdu_title = "شدید بارش اور طوفان کا الرٹ"
+                    elif "flood" in lower_title or "water" in lower_title:
+                        urdu_title = "سائیکلون اور سیلاب کا خطرہ"
+                    elif "heat" in lower_title or "hot" in lower_title:
+                        urdu_title = "شدید گرمی کی لہر کی وارننگ"
+                    elif "fire" in lower_title:
+                        urdu_title = "آگ لگنے کا ہنگامی واقعہ"
+                    elif "accident" in lower_title or "crash" in lower_title:
+                        urdu_title = "ٹریفک حادثہ کی رپورٹ"
+                    elif "earthquake" in lower_title or "quake" in lower_title:
+                        urdu_title = "زلزلہ کے جھٹکے محسوس کیے گئے"
+                        
+                    loaded_articles.append({
+                        "title": clean_title,
+                        "urduTitle": urdu_title,
+                        "source": source_name,
+                        "date": pub_date,
+                        "link": link
+                    })
+    except Exception as e:
+        logging.error(f"Error fetching live-news: {e}")
+        
+    if not loaded_articles:
+        loaded_articles = [
+            {
+                "title": "Monsoon rain triggers flooding warning in Rawalpindi Nullah Lai",
+                "urduTitle": "مون سون کی بارش نے راولپنڈی نالہ لئی میں سیلاب کی وارننگ جاری کر دی",
+                "source": "CDA Weather Division",
+                "date": "10 mins ago",
+                "link": "https://news.google.com"
+            },
+            {
+                "title": "Rescue teams deployed to Sector G-11 for emergency dewatering operations",
+                "urduTitle": "ہنگامی ڈی واٹرنگ آپریشنز کے لیے سیکٹر G-11 میں امدادی ٹیمیں تعینات",
+                "source": "WASA Islamabad",
+                "date": "1 hour ago",
+                "link": "https://news.google.com"
+            },
+            {
+                "title": "CDA urges citizens of Islamabad to avoid low-lying roads during heavy rainfall",
+                "urduTitle": "سی ڈی اے نے اسلام آباد کے شہریوں کو شدید بارش کے دوران نشیبی سڑکوں سے بچنے کی تاکید کی",
+                "source": "CDA Admin",
+                "date": "3 hours ago",
+                "link": "https://news.google.com"
+            }
+        ]
+        
+    return loaded_articles
 
 
 # ════════════════════════════════════════════
@@ -389,6 +495,32 @@ async def get_incidents():
 
 
 # ════════════════════════════════════════════
+# ENDPOINT — DELETE /incidents
+# Clear database and in-memory incidents
+# ════════════════════════════════════════════
+@app.delete("/incidents")
+async def clear_all_incidents():
+    """
+    Clear all incidents from both Postgres database and local memory.
+    Resets resource statuses to 'available'.
+    """
+    try:
+        # Clear in-memory active incidents in the orchestrator
+        orchestrator.memory_block.active_incidents.clear()
+        
+        # Clear database and firestore fallback in-memory records
+        firestore.clear_all_data()
+        
+        return {
+            "success": True,
+            "message": "All incidents successfully cleared and resource statuses reset to available."
+        }
+    except Exception as e:
+        logging.error(f"Error resetting database/memory: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ════════════════════════════════════════════
 # ENDPOINT 5 — GET /incident/{id}
 # FR-25: Full Antigravity agent reasoning trace
 # ════════════════════════════════════════════
@@ -490,6 +622,47 @@ async def get_resources():
 
 
 # ════════════════════════════════════════════
+# ENDPOINT — POST /resources/add
+# Register a new resource unit dynamically
+# ════════════════════════════════════════════
+class AddResourceRequest(BaseModel):
+    resource_id: str
+    name: str
+    resource_type: str
+    quantity_available: int = 1
+    status: str = "available"
+    location: dict # {"lat": float, "lng": float}
+
+
+@app.post("/resources/add")
+async def add_resource(request: AddResourceRequest):
+    """
+    Endpoint to add a new resource to database inventory.
+    """
+    try:
+        data = {
+            "resource_id": request.resource_id,
+            "name": request.name,
+            "type": request.resource_type,
+            "quantity_available": request.quantity_available,
+            "status": request.status,
+            "location": request.location
+        }
+        firestore._save_resource(request.resource_id, data)
+        return {
+            "success": True,
+            "message": f"Resource {request.resource_id} successfully added.",
+            "resource": data
+        }
+    except Exception as e:
+        logging.error(f"Error adding resource: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+# ════════════════════════════════════════════
 # ENDPOINT 7 — POST /action/execute
 # FR-18: Coordinator manual tool execution
 # ════════════════════════════════════════════
@@ -527,6 +700,32 @@ async def execute_action(request: ActionRequest):
         response = tool.run(memory.system_state, agency=request.agency or "Rescue 1122", units=request.units or 1)
         memory.system_state = response.after_state
         result = response.dict()
+        
+        # Mark individual resource unit as deployed and link to incident
+        try:
+            resources = db_client.get_resources()
+            target_agency = (request.agency or "Rescue 1122").lower()
+            allocated = 0
+            for r in resources:
+                r_type = (r.get("resource_type") or r.get("type") or "").lower()
+                r_name = (r.get("name") or "").lower()
+                r_status = (r.get("status") or "available").lower()
+                
+                matches_agency = target_agency in r_name or target_agency in r_type or (
+                    "wasa" in target_agency and "pump" in r_type
+                ) or (
+                    "rescue" in target_agency and "rescue" in r_type
+                ) or (
+                    "police" in target_agency and "police" in r_type
+                )
+                
+                if matches_agency and r_status == "available":
+                    db_client.update_resource_status(r["resource_id"], "deployed", request.incident_id)
+                    allocated += 1
+                    if allocated >= (request.units or 1):
+                        break
+        except Exception as e:
+            logging.error(f"Error allocating database resources in execute_action: {e}")
 
     elif action_type == "alert":
         msg = request.message or f"Emergency alert for incident {request.incident_id}"
@@ -590,7 +789,7 @@ async def export_logs(incident_id: str):
         "incident_id": incident_id,
         "export_time": datetime.now(timezone.utc).isoformat(),
         "system": "KHABAR Crisis Intelligence & Response Orchestrator",
-        "ai_backend": "Google Gemini 2.5 Flash",
+        "ai_backend": "AIML API (Gemini 2.5 Flash) + Local Gemma Fallback",
         "agent_pipeline": ["Detection Agent", "Analysis Agent", "Planning Agent", "Execution Agent"],
         "detection_summary": detection,
         "trace_count": len(traces),
@@ -609,6 +808,7 @@ class ChatRequest(BaseModel):
     language: str = "English"
     user_location: Optional[str] = "Faizabad (Rawalpindi)"
 
+
 @app.post("/chat")
 async def chat(request: ChatRequest):
     """
@@ -621,11 +821,11 @@ async def chat(request: ChatRequest):
         
         language_rule = ""
         if target_lang == "اردو":
-            language_rule = "CRITICAL: You MUST write your response ONLY in pure Urdu language using the Arabic/Persian script (اردو رسم الخط). Do NOT use English or Roman Urdu."
+            language_rule = "CRITICAL: You MUST write your response ONLY in pure Urdu language using the Arabic/Persian script (اردو رسم الخط). Do NOT write in English or Roman Urdu under any circumstances."
         elif target_lang == "Roman Urdu":
-            language_rule = "CRITICAL: You MUST write your response ONLY in Roman Urdu (Urdu written in Latin script, e.g., 'Aap kaise hain?', 'Hum help bhej rahe hain'). Do NOT use Arabic script or pure English."
+            language_rule = "CRITICAL: You MUST write your response ONLY in Roman Urdu (Urdu written in Latin/English script, e.g., 'Aap kaise hain?', 'Hum help bhej rahe hain', 'Islamabad ke emergency numbers yeh hain'). Do NOT write in Arabic script or English under any circumstances."
         else:
-            language_rule = "CRITICAL: You MUST write your response ONLY in English. Do NOT use Urdu script or Roman Urdu."
+            language_rule = "CRITICAL: You MUST write your response ONLY in English. Do NOT write in Urdu script or Roman Urdu under any circumstances."
 
         user_loc = request.user_location or "Faizabad (Rawalpindi)"
 
@@ -645,8 +845,12 @@ async def chat(request: ChatRequest):
         nearest_resource = "Faizabad Rescue Hub"
         distance_str = "8.5 km"
         
+        lat = 33.6844
+        lng = 73.0479
         if geocoded.get("found"):
-            closest_info = maps_service.calculate_closest_rescue_hub(geocoded["lat"], geocoded["lng"], rescue_resources)
+            lat = geocoded["lat"]
+            lng = geocoded["lng"]
+            closest_info = maps_service.calculate_closest_rescue_hub(lat, lng, rescue_resources)
             estimated_time = closest_info["duration"]
             nearest_resource = closest_info["name"]
             distance_str = closest_info["distance"]
@@ -656,26 +860,45 @@ async def chat(request: ChatRequest):
                 estimated_time = "5 to 8 minutes"
                 nearest_resource = "G-11 Fire Station & Rescue Unit"
                 distance_str = "2.8 km"
+                lat, lng = 33.6766, 73.0132
             elif "f-6" in user_loc.lower():
                 estimated_time = "6 to 10 minutes"
                 nearest_resource = "F-6 Emergency Response Point"
                 distance_str = "3.2 km"
+                lat, lng = 33.7299, 73.0746
             elif "e-11" in user_loc.lower():
                 estimated_time = "7 to 12 minutes"
                 nearest_resource = "E-11 WASA Flood Relief Point"
                 distance_str = "4.5 km"
+                lat, lng = 33.7001, 72.9812
             elif "saddar" in user_loc.lower():
                 estimated_time = "8 to 12 minutes"
                 nearest_resource = "Saddar WASA Station"
                 distance_str = "5.1 km"
+                lat, lng = 33.5984, 73.0544
             elif "faizabad" in user_loc.lower():
                 estimated_time = "4 to 7 minutes"
                 nearest_resource = "Faizabad Rescue Hub"
                 distance_str = "1.8 km"
+                lat, lng = 33.6375, 73.0784
             elif "shamsabad" in user_loc.lower() or "lai" in user_loc.lower():
                 estimated_time = "10 to 15 minutes"
                 nearest_resource = "Faizabad Rescue Hub"
                 distance_str = "6.2 km"
+                lat, lng = 33.6375, 73.0784
+
+        # Fetch live weather data using detection_agent's helper
+        from detection_agent import get_live_weather
+        weather_data = get_live_weather(lat, lng)
+        weather_context_str = "Weather data currently unavailable."
+        if weather_data:
+            weather_context_str = (
+                f"- Temperature: {weather_data.get('temperature_c')}°C\n"
+                f"- Rain: {weather_data.get('rain_mm')} mm\n"
+                f"- Showers: {weather_data.get('showers_mm')} mm\n"
+                f"- Snowfall: {weather_data.get('snowfall_cm')} cm\n"
+                f"- Wind Speed: {weather_data.get('wind_speed_kmh')} km/h"
+            )
 
         # Fetch active incidents from PostgreSQL database via Firestore interface to inform chatbot of live news/incidents
         firestore_incidents = firestore.get_all_incidents()
@@ -713,20 +936,24 @@ The user has reported their current location/sector as: {user_loc}
 The nearest emergency response point/station to them is: '{nearest_resource}'
 Calculated response/travel time for help to reach this sector: '{estimated_time}' (precise driving distance: {distance_str})
 
+LIVE WEATHER SENSOR CONTEXT (Open-Meteo):
+{weather_context_str}
+
 SYSTEM CONTEXT — ACTIVE REPORTED INCIDENTS IN DATABASE:
 {incidents_list_str}
 
-LANGUAGE RULE:
-{language_rule}
-
 RULES:
-1. ONLY provide services and information for Islamabad and Rawalpindi. If they ask about other cities like Karachi or Lahore, politely explain that KHABAR is currently active exclusively in Islamabad and Rawalpindi.
-2. Provide highly comforting, warm, and clear responses.
-3. If they describe a real emergency, advise them to go to the 'Report' tab immediately to submit a formal incident so the 4-agent dispatch pipeline can trigger WASA/Rescue 1122.
-4. Keep guidelines actionable (Do's and Don'ts).
-5. When they ask about help arrival, WASA, or Rescue teams, utilize the calculated travel time ({estimated_time}) and distance ({distance_str}) from '{nearest_resource}' and inform them.
-6. Ensure response is cleanly formatted using bullet points where appropriate and avoid raw markdown symbols that look ugly.
-7. When users ask about what incidents occurred or where they occurred (e.g., 'Kahan kahan incident huva hai?', 'Any active news or emergencies?'), look at the 'SYSTEM CONTEXT — ACTIVE REPORTED INCIDENTS IN DATABASE' above and describe exactly where they happened, what type they are, and their current priority/status. Be specific and helpful.
+1. LANGUAGE COMPLIANCE: {language_rule} This is your most critical instruction. You must write your entire response ONLY in the target language specified.
+2. ONLY provide services and information for Islamabad and Rawalpindi. If they ask about other cities like Karachi or Lahore, politely explain that KHABAR is currently active exclusively in Islamabad and Rawalpindi.
+3. Provide highly comforting, warm, and clear responses.
+4. If they describe a real emergency, advise them to go to the 'Report' tab immediately to submit a formal incident so the 4-agent dispatch pipeline can trigger WASA/Rescue 1122.
+5. Keep guidelines actionable (Do's and Don'ts).
+6. When they ask about help arrival, WASA, or Rescue teams, utilize the calculated travel time ({estimated_time}) and distance ({distance_str}) from '{nearest_resource}' and inform them.
+7. Ensure response is cleanly formatted using bullet points where appropriate and avoid raw markdown symbols that look ugly.
+8. When users ask about what incidents occurred or where they occurred (e.g., 'Kahan kahan incident huva hai?', 'Any active news or emergencies?'), look at the 'SYSTEM CONTEXT — ACTIVE REPORTED INCIDENTS IN DATABASE' above and describe exactly where they happened, what type they are, and their current priority/status. Be specific and helpful.
+9. When users ask about the weather, temperature, rain, or storm conditions, check the 'LIVE WEATHER SENSOR CONTEXT (Open-Meteo)' above and describe the current conditions for their location in detail, offering safety tips if conditions are severe.
+
+FINAL REMINDER: The user's language is {target_lang}. You MUST follow the language rule: {language_rule}
 """
         messages = [{"role": "system", "content": system_prompt}]
         for h in request.history:
@@ -753,12 +980,33 @@ RULES:
             "response": response.choices[0].message.content
         }
     except Exception as e:
-        logging.error(f"Chat error: {e}")
-        return {
-            "success": False,
-            "error": str(e),
-            "response": "Maazrat, main is waqt connect nahi ho pa raha. Bara-e-meharbani dobara koshish karein."
-        }
+        logging.warning(f"Online chat error: {e}. Falling back to local Qwen model...")
+        import local_model
+        try:
+            target_lang = request.language or "English"
+            if target_lang in ("ur", "اردو", "Urdu"):
+                lang_code = "ur"
+            elif target_lang in ("roman", "Roman Urdu"):
+                lang_code = "roman"
+            else:
+                lang_code = "en"
+            response_text = local_model.generate_chat_response(
+                message=request.message,
+                language=lang_code,
+                sector=user_loc,
+            )
+            return {
+                "success": True,
+                "response": f"{response_text}\n\n_[🤖 Local AI Fallback Mode — No Internet]_",
+            }
+        except Exception as local_err:
+            logging.error(f"Local fallback chat error: {local_err}")
+            return {
+                "success": False,
+                "error": str(e),
+                "response": "Maazrat, main is waqt connect nahi ho pa raha. Bara-e-meharbani dobara koshish karein."
+            }
+
 
 
 # ════════════════════════════════════════════
@@ -779,7 +1027,7 @@ async def get_live_news():
             "q": "Islamabad Rawalpindi rain flood WASA OR Rescue 1122 OR alert when:7d",
             "gl": "pk",
             "hl": "en",
-            "api_key": "e1310da5ab09d0c4bfb32e0bfc5e514c8c3a29248d2173eb666546c34fc4ca5c"
+            "api_key": os.getenv("SERPAPI_KEY")
         })
         results = search.get_dict()
         news_results = results.get("news_results", [])
@@ -824,9 +1072,475 @@ async def get_live_news():
             
         return formatted_news
     except Exception as e:
-        logging.error(f"SerpAPI news error: {e}")
-        # Return empty list to trigger RSS fallback safely on client
-        return []
+        logging.warning(f"SerpAPI news error: {e}. Generating offline local fallback news...")
+        
+        # Build dynamic news from active database incidents if any
+        fallback_news = []
+        try:
+            firestore_incidents = firestore.get_all_incidents()
+        except Exception:
+            firestore_incidents = []
+            
+        for inc in firestore_incidents:
+            if not inc:
+                continue
+            inc_id = inc.get("incident_id", "KH-000")
+            inc_type = inc.get("incident_type") or "Emergency"
+            loc = inc.get("location") or {}
+            loc_str = "Islamabad/Rawalpindi"
+            if isinstance(loc, dict):
+                loc_str = loc.get("address") or loc.get("location_name") or "Twin Cities"
+            else:
+                loc_str = str(loc)
+            priority = inc.get("priority", "P3")
+            status = inc.get("status", "ACTIVE")
+            
+            fallback_news.append({
+                "title": f"Incident {inc_type} at {loc_str} is currently {status} ({priority} alert)",
+                "urduTitle": f"ہنگامی الرٹ: {loc_str} پر {inc_type} کی کارروائی جاری ہے ({priority})",
+                "source": "Khabar Incident Feed",
+                "date": "Just now",
+                "link": None
+            })
+            
+        # Add general WASA/CDA standby news so we always have content
+        fallback_news.extend([
+            {
+                "title": "WASA Rawalpindi monitors water levels at Nullah Lai (Currently Normal)",
+                "urduTitle": "واسا راولپنڈی: نالہ لئی میں پانی کی سطح کی نگرانی جاری ہے (معمول پر)",
+                "source": "WASA Telemetry",
+                "date": "5 mins ago",
+                "link": None
+            },
+            {
+                "title": "CDA Islamabad launches monsoon drainage cleaning campaign across sectors",
+                "urduTitle": "سی ڈی اے اسلام آباد: مون سون سے قبل نالوں کی صفائی کی مہم شروع",
+                "source": "CDA Public Feed",
+                "date": "15 mins ago",
+                "link": None
+            },
+            {
+                "title": "Emergency Response Teams on high standby in Faizabad & G-11 Hubs",
+                "urduTitle": "ریسکیو 1122: فیض آباد اور جی الیون ہب پر ٹیمیں الرٹ پر ہیں",
+                "source": "Rescue 1122 Feed",
+                "date": "30 mins ago",
+                "link": None
+            }
+        ])
+        
+        return fallback_news
+
+
+# ════════════════════════════════════════════
+# ENDPOINT — POST /local-chat
+# Offline AI chat using local Gemma GGUF model
+# No internet required — uses H:\khabar\models\gemma-4-E2B-it-UD-IQ2_M.gguf
+# ════════════════════════════════════════════
+class LocalChatRequest(BaseModel):
+    message: str
+    language: str = "English"
+    sector: str = "Islamabad"
+
+
+@app.post("/local-chat")
+async def local_chat(request: LocalChatRequest):
+    """
+    Offline AI chat powered by local Qwen GGUF model.
+    Uses H:\\khabar\\models\\Qwen2.5-0.5B-Instruct-Q4_K_M.gguf.
+    No internet connection required. Ideal for disaster/offline scenarios.
+    """
+    import local_model
+    try:
+        target_lang = request.language or "English"
+        if target_lang in ("ur", "اردو", "Urdu"):
+            lang_code = "ur"
+        elif target_lang in ("roman", "Roman Urdu"):
+            lang_code = "roman"
+        else:
+            lang_code = "en"
+        response_text = local_model.generate_chat_response(
+            message=request.message,
+            language=lang_code,
+            sector=request.sector,
+        )
+        return {
+            "success": True,
+            "response": response_text,
+            "mode": "local_qwen" if local_model.is_available() else "error_fallback",
+            "model": "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf" if local_model.is_available() else "none",
+        }
+    except Exception as e:
+        logging.error(f"[local-chat] Error: {e}")
+        return {
+            "success": False,
+            "response": "Koi emergency ho toh Rescue 1122 ya Police 15 call karein.",
+            "mode": "error_fallback",
+        }
+
+
+# ════════════════════════════════════════════
+# ENDPOINT: POST /admin/chat
+# Intelligent command assistant for emergency coordinator dashboard
+# ════════════════════════════════════════════
+class AdminChatRequest(BaseModel):
+    message: str
+    history: list[dict[str, str]] = []
+    language: Optional[str] = "English"
+
+
+@app.post("/admin/chat")
+async def admin_chat(request: AdminChatRequest):
+    """
+    Intelligent chatbot for emergency coordinators in the admin dashboard.
+    Can analyze the active incidents/resources and execute tool actions based on commands.
+    """
+    import re
+    # 1. Fetch active incidents from PostgreSQL / in-memory orchestrator memory block
+    active_incidents = []
+    
+    # In-memory incidents (currently processing)
+    for inc_id, memory in orchestrator.memory_block.active_incidents.items():
+        loc_str = "Unknown"
+        if memory.detection_output:
+            loc = memory.detection_output.detected_location
+            loc_str = f"{loc.area or ''} {loc.city or ''} (lat: {memory.detection_output.detected_location.latitude}, lng: {memory.detection_output.detected_location.longitude})"
+        active_incidents.append({
+            "incident_id": inc_id,
+            "type": memory.detection_output.incident_type.value if memory.detection_output else "Unknown",
+            "priority": memory.detection_output.priority.value if memory.detection_output else "P3",
+            "status": memory.system_state.status,
+            "location": loc_str,
+            "active_units": memory.system_state.active_units,
+            "closed_roads": memory.system_state.closed_roads,
+            "public_alerts": memory.system_state.public_alerts_sent,
+        })
+        
+    # Firestore / Postgres database incidents
+    try:
+        firestore_incidents = firestore.get_all_incidents()
+        memory_ids = {i["incident_id"] for i in active_incidents}
+        for fi in firestore_incidents:
+            if fi:
+                inc_id = fi.get("incident_id")
+                if inc_id and inc_id not in memory_ids:
+                    loc = fi.get("location") or {}
+                    loc_str = loc.get("address") or loc.get("location_name") or f"lat: {fi.get('lat')}, lng: {fi.get('lng')}"
+                    active_incidents.append({
+                        "incident_id": inc_id,
+                        "type": fi.get("incident_type") or "Emergency",
+                        "priority": fi.get("priority") or "P3",
+                        "status": fi.get("status") or "ACTIVE",
+                        "location": loc_str,
+                        "active_units": fi.get("active_units") or 0,
+                        "closed_roads": fi.get("closed_roads") or [],
+                        "public_alerts": fi.get("public_alerts_sent") or 0,
+                    })
+    except Exception as e:
+        logging.error(f"Error fetching incidents for admin chat: {e}")
+
+    # Format incidents string
+    incidents_list_str = ""
+    for inc in active_incidents:
+        incidents_list_str += f"- ID: {inc['incident_id']} | Type: {inc['type']} | Priority: {inc['priority']} | Status: {inc['status']} | Location: {inc['location']} | Units Assigned: {inc['active_units']} | Closed Roads: {inc['closed_roads']}\n"
+    if not incidents_list_str:
+        incidents_list_str = "No active emergency incidents recorded in the system."
+
+    # 2. Fetch resources
+    try:
+        resources = firestore.get_resources()
+    except Exception:
+        resources = []
+        
+    resources_list_str = ""
+    for res in resources:
+        resources_list_str += f"- ID: {res.get('resource_id')} | Name: {res.get('name')} | Type: {res.get('resource_type') or res.get('type')} | Status: {res.get('status')} | Quantity: {res.get('quantity_available', res.get('quantity', 1))}\n"
+    if not resources_list_str:
+        resources_list_str = "No resources cataloged in database inventory."
+
+    # Construct the System Prompt
+    system_prompt = f"""You are Khabar Admin Command Assistant, the administrative agent for the emergency response dashboard.
+You help emergency coordinators analyze situations, manage resources, and execute operations.
+
+CURRENT SYSTEM STATE:
+---
+ACTIVE EMERGENCY INCIDENTS:
+{incidents_list_str}
+
+RESOURCE INVENTORY:
+{resources_list_str}
+---
+
+AVAILABLE COMMANDS:
+You can execute coordinator commands by including a special command tag in your response. The system parses and executes it automatically.
+Command syntax rules:
+- Dispatch resources:
+  [EXECUTE: dispatch, incident_id="<id>", agency="<agency>", units=<number>]
+  (Agencies: "Rescue 1122", "NDMA", "WASA", "Traffic Police", "Edhi Foundation")
+- Broadcast public warning:
+  [EXECUTE: alert, incident_id="<id>", message="<alert message>", location="<location name>"]
+- Update traffic detour:
+  [EXECUTE: reroute, incident_id="<id>", location="<road name to close>"]
+- Create support ticket:
+  [EXECUTE: ticket, incident_id="<id>", agency="<NDMA|WASA|CDA>", message="<details>"]
+- Update incident status:
+  [EXECUTE: status, incident_id="<id>", new_status="<IN_PROGRESS|RESOLVED|CLOSED|REJECTED>"]
+- Add new resource unit:
+  [EXECUTE: add_resource, resource_id="<id>", name="<name>", resource_type="<rescue_team|ambulance|dewatering_pump|medical_kit>", quantity_available=<number>, lat=<latitude>, lng=<longitude>]
+- Clear all system incidents/data:
+  [EXECUTE: clear_database]
+
+RULES:
+1. Trigger commands ONLY when the user asks you to perform an action (e.g. "dispatch NDMA", "clear db", "mark as resolved", "alert sector F-7", "close Murree Road").
+2. Include the EXACT [EXECUTE: ...] tag at the start of your message, followed by an explanation of what action you are taking.
+3. For situation summaries, analyze active cases, priorities, hotspots, and give recommendations.
+4. Keep a highly professional, prompt, and direct tone. Match the language the user speaks (English, Urdu, or Roman Urdu).
+"""
+
+    messages = [{"role": "system", "content": system_prompt}]
+    for h in request.history:
+        role = "assistant" if h.get("role") in ("assistant", "model") else "user"
+        messages.append({"role": role, "content": h.get("content", "")})
+    messages.append({"role": "user", "content": request.message})
+
+    response_text = ""
+    command_executed = None
+    
+    # Try online AIML API with retries to prevent premature local fallback on network delay
+    aiml_success = False
+    for attempt in range(3):
+        try:
+            client = orchestrator.detection_agent.llm_client.client
+            model = orchestrator.detection_agent.llm_client.model
+            
+            response = await asyncio.wait_for(
+                client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=0.3,
+                ),
+                timeout=25.0
+            )
+            response_text = response.choices[0].message.content
+            aiml_success = True
+            logging.info(f"[Admin Chat] ✅ Successful response from AIML API (Attempt {attempt+1})")
+            break
+        except Exception as e:
+            logging.warning(f"[Admin Chat] Attempt {attempt+1} failed/timed out: {e}")
+            if attempt < 2:
+                await asyncio.sleep(1)
+
+    if not aiml_success:
+        logging.warning("Online admin chat failed. Falling back to local offline model...")
+        import local_model
+        if local_model.is_available():
+            full_prompt = (
+                f"<|im_start|>system\n{system_prompt}\n<|im_end|>\n"
+                f"<|im_start|>user\n{request.message}<|im_end|>\n"
+                f"<|im_start|>assistant\n"
+            )
+            try:
+                response = local_model._llm(
+                    full_prompt,
+                    max_tokens=512,
+                    temperature=0.2,
+                    stop=["<|im_end|>", "<|im_start|>"],
+                )
+                response_text = response["choices"][0]["text"].strip()
+            except Exception as le:
+                logging.error(f"Local admin chat error: {le}")
+                response_text = "Error: Local model failed to respond."
+        else:
+            response_text = "I am unable to connect to the online AI service, and the local fallback model is not available."
+
+    # Parse command tag
+    match = re.search(r'\[EXECUTE:\s*(\w+)(.*?)\]', response_text)
+    if match:
+        action_type = match.group(1).lower().strip()
+        args_str = match.group(2)
+        
+        args = {}
+        for key, val1, val2, val3 in re.findall(r'(\w+)\s*=\s*(?:"([^"]*)"|\'([^\']*)\'|([^\s,\]]+))', args_str):
+            val = val1 or val2 or val3
+            args[key] = val
+            
+        logging.info(f"[Admin Chat Command] Intercepted: {action_type} with args: {args}")
+        
+        try:
+            from tool_system import (
+                DispatchRescueTeam, BroadcastAlert, UpdateTrafficRoute,
+                CreateEmergencyTicket, UpdateIncidentStatus
+            )
+            
+            db_client = firestore
+            
+            if action_type == "clear_database":
+                orchestrator.memory_block.active_incidents.clear()
+                db_client.clear_all_data()
+                command_executed = {
+                    "action_type": "clear_database",
+                    "success": True,
+                    "detail": "All incidents cleared and resources reset successfully."
+                }
+            
+            elif action_type == "add_resource":
+                res_id = args.get("resource_id") or f"RES-{int(datetime.now().timestamp())}"
+                name = args.get("name") or "Rescue Unit"
+                res_type = args.get("resource_type") or "rescue_team"
+                qty = int(args.get("quantity_available") or 1)
+                lat = float(args.get("lat") or 33.6844)
+                lng = float(args.get("lng") or 73.0479)
+                
+                data = {
+                    "resource_id": res_id,
+                    "name": name,
+                    "type": res_type,
+                    "quantity_available": qty,
+                    "status": "available",
+                    "location": {"lat": lat, "lng": lng}
+                }
+                db_client._save_resource(res_id, data)
+                command_executed = {
+                    "action_type": "add_resource",
+                    "success": True,
+                    "detail": f"Successfully registered resource '{name}' ({res_type}) in system."
+                }
+            
+            else:
+                inc_id = args.get("incident_id")
+                memory = orchestrator.memory_block.get_incident(inc_id) if inc_id else None
+                
+                if not inc_id:
+                    command_executed = {
+                        "action_type": action_type,
+                        "success": False,
+                        "detail": "Failed: incident_id is required for this operation."
+                    }
+                elif not memory:
+                    command_executed = {
+                        "action_type": action_type,
+                        "success": False,
+                        "detail": f"Failed: Incident ID '{inc_id}' is not active in memory queue."
+                    }
+                else:
+                    if action_type == "dispatch":
+                        tool = DispatchRescueTeam(db_client)
+                        response = tool.run(
+                            memory.system_state,
+                            agency=args.get("agency") or "Rescue 1122",
+                            units=int(args.get("units") or 1)
+                        )
+                        memory.system_state = response.after_state
+                        orchestrator.push_to_firestore(memory)
+                        command_executed = {
+                            "action_type": "dispatch",
+                            "success": True,
+                            "detail": f"Dispatched {args.get('units', 1)} unit(s) of {args.get('agency', 'Rescue 1122')}."
+                        }
+                        
+                        # Mark individual resource unit as deployed and link to incident
+                        try:
+                            resources = db_client.get_resources()
+                            target_agency = (args.get("agency") or "Rescue 1122").lower()
+                            allocated = 0
+                            for r in resources:
+                                r_type = (r.get("resource_type") or r.get("type") or "").lower()
+                                r_name = (r.get("name") or "").lower()
+                                r_status = (r.get("status") or "available").lower()
+                                
+                                matches_agency = target_agency in r_name or target_agency in r_type or (
+                                    "wasa" in target_agency and "pump" in r_type
+                                ) or (
+                                    "rescue" in target_agency and "rescue" in r_type
+                                ) or (
+                                    "police" in target_agency and "police" in r_type
+                                )
+                                
+                                if matches_agency and r_status == "available":
+                                    db_client.update_resource_status(r["resource_id"], "deployed", inc_id)
+                                    allocated += 1
+                                    if allocated >= int(args.get("units") or 1):
+                                        break
+                        except Exception as e:
+                            logging.error(f"Error allocating database resources in admin_chat dispatch: {e}")
+                    
+                    elif action_type == "alert":
+                        msg = args.get("message") or f"Emergency warning for {inc_id}"
+                        loc = args.get("location") or "Islamabad"
+                        alert_service.send_alert(msg, loc, incident_id=inc_id)
+                        memory.system_state.public_alerts_sent += 1
+                        orchestrator.push_to_firestore(memory)
+                        command_executed = {
+                            "action_type": "alert",
+                            "success": True,
+                            "detail": f"Broadcasted public warning message to '{loc}'."
+                        }
+                        
+                    elif action_type == "reroute":
+                        tool = UpdateTrafficRoute(db_client)
+                        loc = args.get("location") or "Main Road"
+                        response = tool.run(
+                            memory.system_state,
+                            close_road=loc,
+                            detour_route="Alternate Route"
+                        )
+                        memory.system_state = response.after_state
+                        orchestrator.push_to_firestore(memory)
+                        command_executed = {
+                            "action_type": "reroute",
+                            "success": True,
+                            "detail": f"Road '{loc}' closed and traffic detours updated."
+                        }
+                        
+                    elif action_type == "ticket":
+                        tool = CreateEmergencyTicket(db_client)
+                        agency = args.get("agency") or "NDMA"
+                        msg = args.get("message") or "Emergency warning details"
+                        response = tool.run(
+                            memory.system_state,
+                            target_agency=agency,
+                            details=msg,
+                            severity="HIGH"
+                        )
+                        memory.system_state = response.after_state
+                        orchestrator.push_to_firestore(memory)
+                        command_executed = {
+                            "action_type": "ticket",
+                            "success": True,
+                            "detail": f"Emergency ticket opened with agency '{agency}'."
+                        }
+                        
+                    elif action_type == "status":
+                        tool = UpdateIncidentStatus(db_client)
+                        status_val = args.get("new_status") or "IN_PROGRESS"
+                        response = tool.run(
+                            memory.system_state,
+                            new_status=status_val,
+                            reason="Coordinator command assistant override"
+                        )
+                        memory.system_state = response.after_state
+                        orchestrator.push_to_firestore(memory)
+                        command_executed = {
+                            "action_type": "status",
+                            "success": True,
+                            "detail": f"Incident status updated to '{status_val}'."
+                        }
+            
+            response_text = re.sub(r'\[EXECUTE:\s*\w+.*?\]', '', response_text).strip()
+            
+        except Exception as ex:
+            logging.error(f"Command execution failed in Admin Chat: {ex}")
+            command_executed = {
+                "action_type": action_type,
+                "success": False,
+                "detail": f"Execution failed: {str(ex)}"
+            }
+            response_text = re.sub(r'\[EXECUTE:\s*\w+.*?\]', '', response_text).strip()
+
+    return {
+        "success": True,
+        "response": response_text,
+        "command_executed": command_executed
+    }
 
 
 # ════════════════════════════════════════════
@@ -834,8 +1548,20 @@ async def get_live_news():
 # ════════════════════════════════════════════
 @app.get("/health")
 async def health():
+    # Check if the backend server itself has internet access
+    # This is used by the Flutter app's self-healing connectivity logic:
+    # If the Android emulator can't reach google.com directly, it asks the backend.
+    internet_ok = False
+    try:
+        import urllib.request as _urlreq
+        _urlreq.urlopen("https://www.google.com", timeout=3)
+        internet_ok = True
+    except Exception:
+        internet_ok = False
+
     return {
         "status": "healthy",
+        "internet": internet_ok,
         "active_incidents": len(orchestrator.memory_block.active_incidents),
         "total_alerts_sent": alert_service.total_delivered,
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -845,7 +1571,7 @@ async def health():
 if __name__ == "__main__":
     import uvicorn
     print("\n" + "="*60)
-    print("  KHABAR AI Backend — Google Gemini 2.5 Flash")
+    print("  KHABAR AI Backend — AIML API (Gemini 2.5 Flash)")
     print("  API: http://127.0.0.1:8000")
     print("  Docs: http://127.0.0.1:8000/docs")
     print("  Dashboard: http://127.0.0.1:8001")

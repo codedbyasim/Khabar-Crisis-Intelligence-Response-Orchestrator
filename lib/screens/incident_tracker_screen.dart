@@ -238,7 +238,11 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
                     ),
                     
                   // ── 6. Resource Dispatch Confirmation ──
-                  if (data['status'] == 'COMPLETED' || _status.toLowerCase().contains("complete"))
+                  // Show when resources have been allocated (active_units present) OR completed
+                  if (data['after_state'] != null && 
+                      ((data['after_state'] as Map<String, dynamic>?)?['active_units'] as Map?)?.isNotEmpty == true)
+                    _buildDispatchDetailsPanel(data)
+                  else if (data['status'] == 'COMPLETED' || _status.toLowerCase().contains("complete"))
                     _buildDispatchDetailsPanel(data),
                 ],
                 const SizedBox(height: 24),
@@ -252,20 +256,37 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
 
   // ── Dispatch Details Panel ──
   Widget _buildDispatchDetailsPanel(Map<String, dynamic> data) {
-    // Extract resource info from after_state or active_units
-    String resourceName = 'Emergency Response Unit';
-    String distance = '2.4 km';
-    String eta = '6 Minutes';
-
+    // Parse active_units from after_state. The schema is Map<String, int>
+    // e.g. {"ambulance": 2, "rescue_team": 1}
     final afterState = data['after_state'] as Map<String, dynamic>?;
-    if (afterState != null) {
-      final units = afterState['active_units'] as Map?;
-      if (units != null && units.isNotEmpty) {
-        resourceName = units.values.first['type']?.toString() ?? resourceName;
-        // Mock distance/eta if not in backend yet
-        distance = '1.8 km';
-        eta = '4 Minutes';
+    final activeUnits = afterState?['active_units'] as Map<String, dynamic>? ?? {};
+
+    // Build a list of dispatched resource entries
+    final List<Map<String, String>> dispatchedItems = [];
+    activeUnits.forEach((resourceType, rawCount) {
+      final count = (rawCount as num?)?.toInt() ?? 1;
+      if (count > 0) {
+        // Friendly resource type name
+        final typeName = _friendlyResourceType(resourceType);
+        // ETA based on resource type (realistic simulation)
+        final eta = _etaForResourceType(resourceType);
+        dispatchedItems.add({
+          'type': typeName,
+          'units': '$count unit${count > 1 ? 's' : ''}',
+          'eta': eta,
+          'icon': _iconNameForResourceType(resourceType),
+        });
       }
+    });
+
+    // If no units found in after_state, show a fallback
+    if (dispatchedItems.isEmpty) {
+      dispatchedItems.add({
+        'type': 'Emergency Response Unit',
+        'units': '1 unit',
+        'eta': '6 Minutes',
+        'icon': 'ambulance',
+      });
     }
 
     return Padding(
@@ -275,7 +296,9 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
           side: BorderSide(
-            color: _isHelpDelivered ? Colors.green.withValues(alpha: 0.3) : kPrimaryTeal.withValues(alpha: 0.2),
+            color: _isHelpDelivered
+                ? Colors.green.withValues(alpha: 0.3)
+                : kPrimaryTeal.withValues(alpha: 0.2),
             width: 1.5,
           ),
         ),
@@ -287,8 +310,11 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
             children: [
               Row(
                 children: [
-                  Icon(_isHelpDelivered ? Icons.verified : Icons.local_shipping, 
-                       color: _isHelpDelivered ? Colors.green : kPrimaryTeal, size: 24),
+                  Icon(
+                    _isHelpDelivered ? Icons.verified : Icons.local_shipping,
+                    color: _isHelpDelivered ? Colors.green : kPrimaryTeal,
+                    size: 24,
+                  ),
                   const SizedBox(width: 8),
                   Text(
                     _isHelpDelivered ? 'Help Delivered' : 'Dispatch En Route',
@@ -300,40 +326,15 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
               if (!_isHelpDelivered) ...[
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Resource:', style: GoogleFonts.nunito(fontSize: 14, color: kTextLight)),
-                    Text(resourceName, style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.bold, color: kTextDark)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Distance:', style: GoogleFonts.nunito(fontSize: 14, color: kTextLight)),
-                    Text(distance, style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.bold, color: kTextDark)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Expected Arrival:', style: GoogleFonts.nunito(fontSize: 14, color: kTextLight)),
-                    Text(eta, style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.bold, color: kEmergencyRed)),
-                  ],
-                ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 16),
+                // ── Resource cards for each dispatched unit type ──
+                ...dispatchedItems.map((item) => _buildResourceCard(item)),
+                const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: () {
-                      setState(() {
-                        _isHelpDelivered = true;
-                      });
-                    },
+                    onPressed: () => setState(() => _isHelpDelivered = true),
                     icon: const Icon(Icons.check_circle_outline),
                     label: const Text('Confirm Help Delivered'),
                     style: ElevatedButton.styleFrom(
@@ -345,6 +346,7 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
                   ),
                 ),
               ] else ...[
+                const SizedBox(height: 12),
                 Text(
                   'You have confirmed that the emergency resource has arrived and help was delivered safely.',
                   style: GoogleFonts.nunito(fontSize: 14, color: kTextDark),
@@ -355,6 +357,119 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
         ),
       ),
     );
+  }
+
+  /// Individual resource dispatch card showing type, units, and ETA
+  Widget _buildResourceCard(Map<String, String> item) {
+    final icon = _resourceIcon(item['icon'] ?? 'ambulance');
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: kPrimaryTeal.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: kPrimaryTeal.withValues(alpha: 0.15)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40, height: 40,
+            decoration: BoxDecoration(
+              color: kPrimaryTeal.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: kPrimaryTeal, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item['type']!,
+                  style: GoogleFonts.nunito(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: kTextDark,
+                  ),
+                ),
+                Text(
+                  item['units']!,
+                  style: GoogleFonts.nunito(fontSize: 12, color: kTextLight),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                'ETA',
+                style: GoogleFonts.nunito(fontSize: 11, color: kTextLight),
+              ),
+              Text(
+                item['eta']!,
+                style: GoogleFonts.nunito(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: kEmergencyRed,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Maps resource_type string to a friendly display name
+  String _friendlyResourceType(String type) {
+    switch (type.toLowerCase()) {
+      case 'ambulance': return 'Ambulance Unit';
+      case 'rescue_team': return 'Rescue Team';
+      case 'fire_truck': return 'Fire Brigade';
+      case 'dewatering_pump': return 'WASA Dewatering Pump';
+      case 'police_unit': return 'Police Unit';
+      case 'helicopter': return 'Emergency Helicopter';
+      default: return type.replaceAll('_', ' ').toUpperCase();
+    }
+  }
+
+  /// Returns an ETA string based on resource type
+  String _etaForResourceType(String type) {
+    switch (type.toLowerCase()) {
+      case 'ambulance': return '5 Minutes';
+      case 'rescue_team': return '8 Minutes';
+      case 'fire_truck': return '6 Minutes';
+      case 'dewatering_pump': return '15 Minutes';
+      case 'police_unit': return '4 Minutes';
+      case 'helicopter': return '12 Minutes';
+      default: return '7 Minutes';
+    }
+  }
+
+  /// Returns icon name key for resource type
+  String _iconNameForResourceType(String type) {
+    switch (type.toLowerCase()) {
+      case 'ambulance': return 'ambulance';
+      case 'rescue_team': return 'rescue_team';
+      case 'fire_truck': return 'fire_truck';
+      case 'dewatering_pump': return 'dewatering_pump';
+      case 'police_unit': return 'police_unit';
+      default: return 'ambulance';
+    }
+  }
+
+  /// Maps icon name key to Flutter IconData
+  IconData _resourceIcon(String iconName) {
+    switch (iconName) {
+      case 'ambulance': return Icons.medical_services;
+      case 'rescue_team': return Icons.groups;
+      case 'fire_truck': return Icons.local_fire_department;
+      case 'dewatering_pump': return Icons.water_damage;
+      case 'police_unit': return Icons.local_police;
+      default: return Icons.emergency;
+    }
   }
 
   Widget _buildLoadingState() {

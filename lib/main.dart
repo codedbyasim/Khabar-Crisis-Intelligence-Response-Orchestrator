@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
 
+import 'package:flutter/foundation.dart';
 import 'package:khabar/screens/alerts_screen.dart';
 import 'package:khabar/screens/home_screen.dart';
 import 'package:khabar/screens/map_screen.dart';
@@ -15,6 +16,7 @@ import 'package:khabar/theme/translations.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:khabar/utils/connectivity_service.dart';
 
 // Global navigator key to allow dialogs and routing from FCM callbacks
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -29,15 +31,34 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Firebase (requires google-services.json in android/app/)
+  // Initialize Firebase (requires google-services.json in android/app/, skipped on Web)
   try {
-    await Firebase.initializeApp();
+    if (!kIsWeb) {
+      await Firebase.initializeApp();
 
-    // Register background handler
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+      // Register background handler
+      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
+      // Setup FCM messaging subscriptions and handlers asynchronously without blocking runApp
+      _setupFCMNonBlocking();
+    } else {
+      debugPrint('[FCM] Web platform detected. Skipping Firebase initialization.');
+    }
+  } catch (e) {
+    // Firebase not configured yet — app runs without push notifications
+    debugPrint('[FCM] Firebase not initialized: $e');
+  }
+
+  runApp(const KhabarApp());
+}
+
+Future<void> _setupFCMNonBlocking() async {
+  try {
     // Subscribe to the KHABAR public alerts topic
-    await FirebaseMessaging.instance.subscribeToTopic('khabar_public_alerts');
+    await FirebaseMessaging.instance.subscribeToTopic('khabar_public_alerts').timeout(
+      const Duration(seconds: 4),
+      onTimeout: () => throw Exception('[FCM] Topic subscription timed out'),
+    );
     debugPrint('[FCM] ✅ Subscribed to khabar_public_alerts topic');
 
     // Request iOS/Android 13+ notification permission
@@ -45,6 +66,9 @@ void main() async {
       alert: true,
       badge: true,
       sound: true,
+    ).timeout(
+      const Duration(seconds: 4),
+      onTimeout: () => throw Exception('[FCM] Request permission timed out'),
     );
 
     // Handle foreground messages
@@ -106,12 +130,10 @@ void main() async {
       }
     });
   } catch (e) {
-    // Firebase not configured yet — app runs without push notifications
-    debugPrint('[FCM] Firebase not initialized (add google-services.json): $e');
+    debugPrint('[FCM] Error in non-blocking FCM setup: $e');
   }
-
-  runApp(const KhabarApp());
 }
+
 
 
 class KhabarApp extends StatelessWidget {
@@ -215,7 +237,53 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: _screens[_currentIndex],
+      body: Column(
+        children: [
+          ValueListenableBuilder<bool>(
+            valueListenable: ConnectivityService(),
+            builder: (context, isOnline, child) {
+              if (isOnline) {
+                return const SizedBox.shrink();
+              }
+
+              final service = ConnectivityService();
+              String message = "OFFLINE MODE — Local AI & Offline Maps Active";
+              IconData icon = Icons.wifi_off;
+
+              if (service.hasInternet && !service.isBackendOnline) {
+                message = "BACKEND OFFLINE — Please start api_server.py";
+                icon = Icons.dns_outlined;
+              } else if (!service.hasInternet) {
+                message = "NO INTERNET — Local AI & Offline Maps Active";
+                icon = Icons.wifi_off;
+              }
+
+              return Container(
+                width: double.infinity,
+                color: kEmergencyRed,
+                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 16),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, color: Colors.white, size: 16),
+                    const SizedBox(width: 8),
+                    Text(
+                      message,
+                      style: GoogleFonts.nunito(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          Expanded(child: _screens[_currentIndex]),
+        ],
+      ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
           boxShadow: [

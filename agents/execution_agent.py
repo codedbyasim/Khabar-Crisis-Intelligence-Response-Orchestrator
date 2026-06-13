@@ -87,7 +87,7 @@ AVAILABLE TOOLS TO MAP TO:
 
 RULES:
 - You must simulate the tool execution perfectly. If deploying an ambulance, the `after_state.active_units['ambulance']` MUST increase compared to the `before_state`.
-- All generated content (logs, alerts, reasoning) MUST be dynamically created using Gemini's intelligence based on the specific plan. No hardcoded mock outputs.
+- All generated content (logs, alerts, reasoning) MUST be dynamically created using AI intelligence based on the specific plan. No hardcoded mock outputs.
 """
 
 # ==========================================
@@ -117,21 +117,46 @@ class ExecutionAgent:
         self.system_prompt = SYSTEM_PROMPT
 
     async def process_execution(self, payload: ExecutionInputPayload) -> ExecutionOutput:
-        prompt = f"Execution Payload:\n{payload.model_dump_json()}"
-        
+        # Build a compact prompt — avoids sending the full JSON schema dump as input
+        # which inflates token count and causes Gemini 2.5 to slow down dramatically.
+        plan_summary = []
+        for a in payload.plan_data.recommended_actions:
+            plan_summary.append(
+                f"- {a.action_type} | agency={a.target_agency} | units={a.required_units}"
+            )
+        plan_text = "\n".join(plan_summary) or "No specific actions"
+
+        prompt = (
+            f"Incident ID: {payload.current_system_state.incident_id}\n"
+            f"Current Status: {payload.current_system_state.status}\n"
+            f"Response Strategy: {payload.plan_data.response_strategy}\n"
+            f"Actions to execute:\n{plan_text}\n\n"
+            f"Execute all actions, mutate system state, generate Urdu+English alerts, "
+            f"and return the full ExecutionOutput JSON."
+        )
+
         try:
+            # 50-second hard timeout per LLM attempt to allow generating large structured JSON responses under load
             raw_response = await self.llm_client.generate_json(
                 system_prompt=self.system_prompt,
                 user_prompt=prompt,
-                json_schema_dict=ExecutionOutput.model_json_schema()
+                json_schema_dict=ExecutionOutput.model_json_schema(),
+                timeout_seconds=50,
             )
-            
+
             parsed_json = json.loads(raw_response)
+
+            # Patch incident_id into before/after states if LLM forgets to set it
+            inc_id = payload.current_system_state.incident_id
+            for state_key in ("before_state", "after_state"):
+                if state_key in parsed_json and isinstance(parsed_json[state_key], dict):
+                    parsed_json[state_key].setdefault("incident_id", inc_id)
+
             output = ExecutionOutput(**parsed_json)
-                
             return output
 
         except ValidationError as e:
-            raise RuntimeError(f"Gemini API returned invalid JSON structure: {str(e)}")
+            raise RuntimeError(f"Execution Agent JSON structure invalid: {str(e)[:200]}")
         except Exception as e:
-            raise RuntimeError(f"API Error: {str(e)}")
+            raise RuntimeError(f"Execution Agent error: {str(e)[:200]}")
+

@@ -35,14 +35,15 @@ class ActionType(str, Enum):
     ACTIVATE_HEATWAVE_RESPONSE = "activate heatwave response"
 
 class Agency(str, Enum):
-    RESCUE_1122 = "Rescue 1122"
-    NDMA = "NDMA"
-    PDMA = "PDMA"
+    RESCUE_1122   = "Rescue 1122"
+    NDMA          = "NDMA"
+    PDMA          = "PDMA"
     TRAFFIC_POLICE = "Traffic Police"
-    WASA = "WASA"
-    K_ELECTRIC = "K-Electric"
-    EDHI = "Edhi Foundation"
-    CHHIPA = "Chhipa"
+    WASA          = "WASA"
+    IESCO         = "IESCO"           # Islamabad & Rawalpindi power utility
+    CDA           = "CDA"             # Capital Development Authority (Islamabad)
+    RDA           = "RDA"             # Rawalpindi Development Authority
+    PUNJAB_EMERGENCY = "Punjab Emergency Service"
 
 class ActionPriority(str, Enum):
     P1_IMMEDIATE = "P1_IMMEDIATE"
@@ -202,6 +203,6 @@ class PlanningAgent:
             return output
 
         except ValidationError as e:
-            raise RuntimeError(f"Gemini API returned invalid JSON structure: {str(e)}")
+            raise RuntimeError(f"AIML API returned invalid JSON structure: {str(e)}")
         except Exception as e:
             raise RuntimeError(f"API Error: {str(e)}")

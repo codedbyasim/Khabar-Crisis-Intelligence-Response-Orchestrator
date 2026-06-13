@@ -6,6 +6,8 @@ import 'package:khabar/theme/language_provider.dart';
 import 'package:khabar/theme/translations.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:khabar/utils/connectivity_service.dart';
+import 'package:khabar/api_config.dart';
 
 import 'package:khabar/screens/ai_chat_screen.dart';
 
@@ -41,6 +43,22 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _fetchWeatherData() async {
+    if (!ConnectivityService().value) {
+      if (mounted) {
+        setState(() {
+          _weatherData = {
+            "current": {
+              "temperature_2m": 31.0,
+              "wind_speed_10m": 8.5,
+              "weather_code": 3 // partly cloudy
+            }
+          };
+          _isLoadingWeather = false;
+        });
+      }
+      return;
+    }
+
     try {
       final String region = LanguageProvider().region;
       final bool isRawalpindi = region.toLowerCase().contains('rawalpindi');
@@ -65,16 +83,35 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _fetchNewsData() async {
+    if (!ConnectivityService().value) {
+      if (mounted) {
+        setState(() {
+          _newsArticles = [
+            {
+              "title": "Offline Mode active: Local response teams are alert in twin cities",
+              "source": {"name": "Khabar System Alert"},
+              "date": "Just now"
+            },
+            {
+              "title": "Nullah Lai Rawalpindi water level monitored via local telemetry sensors",
+              "source": {"name": "WASA Offline Telemetry"},
+              "date": "10 mins ago"
+            }
+          ];
+          _isLoadingNews = false;
+        });
+      }
+      return;
+    }
+
     try {
-      const apiKey = 'e1310da5ab09d0c4bfb32e0bfc5e514c8c3a29248d2173eb666546c34fc4ca5c';
-      final String region = LanguageProvider().region.split(',').first.trim();
-      final url = 'https://serpapi.com/search.json?engine=google_news&q=${Uri.encodeComponent(region)}+(emergency+OR+accident+OR+rain+OR+flood+OR+protest+OR+alert)+when:7d&api_key=$apiKey';
+      final url = '${ApiConfig.baseUrl}/live-news';
       final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 8));
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+        final List data = jsonDecode(response.body);
         if (mounted) {
           setState(() {
-            _newsArticles = data['news_results'] ?? [];
+            _newsArticles = data;
             _isLoadingNews = false;
           });
         }
@@ -204,8 +241,39 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                   ),
                 ),
-                const Icon(Icons.circle, color: Colors.green, size: 10),
-                const SizedBox(width: 6),
+                // Real-time ONLINE/OFFLINE indicator
+                ValueListenableBuilder<bool>(
+                  valueListenable: ConnectivityService(),
+                  builder: (context, isOnline, child) {
+                    final statusColor = isOnline ? Colors.green : Colors.red;
+                    final statusLabel = isOnline ? "ONLINE" : "OFFLINE";
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: statusColor.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.circle, color: statusColor, size: 8),
+                          const SizedBox(width: 4),
+                          Text(
+                            statusLabel,
+                            style: GoogleFonts.nunito(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: statusColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(width: 8),
+                const Icon(Icons.circle, color: Colors.green, size: 8),
+                const SizedBox(width: 4),
                 Text(
                   AppTranslations.t('location_active', _selectedLanguage),
                   style: GoogleFonts.nunito(fontSize: 12, color: Colors.green),
@@ -360,7 +428,8 @@ class _HomeScreenState extends State<HomeScreen>
                           (index) {
                             final article = _newsArticles[index];
                             final title = article['title'] ?? 'Emergency Report';
-                            final sourceName = article['source']?['name'] ?? 'Local Source';
+                            final rawSource = article['source'];
+                            final String sourceName = rawSource is Map ? (rawSource['name'] ?? 'Local Source') : (rawSource?.toString() ?? 'Local Source');
                             final dateStr = article['date'] ?? '';
                             
                             // Determine basic icon and color based on title

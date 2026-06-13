@@ -163,7 +163,7 @@ class UpdateTrafficRoute(AntigravityTool):
 # ==========================================
 class CreateEmergencyTicket(AntigravityTool):
     """
-    PURPOSE: Generates standardized tickets for specific utility/agency systems (e.g., K-Electric).
+    PURPOSE: Generates standardized tickets for IESCO, WASA, Rescue 1122, CDA, and other Islamabad/Rawalpindi agencies.
     PARAMETERS: target_agency (str), details (str), severity (str)
     """
     def _execute(self, state: SystemState, target_agency: str, details: str, severity: str):
@@ -243,11 +243,11 @@ if __name__ == "__main__":
     # Execute Pipeline
     responses = []
     
-    responses.append(ticket_tool.run(current_state, target_agency="K-Electric", details="Cut power to Clifton Underpass", severity="CRITICAL"))
-    responses.append(dispatch_tool.run(current_state, agency="Edhi Foundation", units=5))
-    responses.append(traffic_tool.run(current_state, close_road="Clifton Arterial", detour_route="Marine Drive"))
-    responses.append(alert_tool.run(current_state, message="خطرہ: کلفٹن انڈرپاس سے دور رہیں۔", target_audience="Clifton GeoFence 2km"))
-    responses.append(status_tool.run(current_state, new_status="RESPONDING", reason="Initial response pipeline completely deployed."))
+    responses.append(ticket_tool.run(current_state, target_agency="IESCO", details="Power cut required at flooded Nullah Lai Bridge section", severity="CRITICAL"))
+    responses.append(dispatch_tool.run(current_state, agency="Rescue 1122", units=3))
+    responses.append(traffic_tool.run(current_state, close_road="Murree Road Rawalpindi", detour_route="Peshawar Road Alternative"))
+    responses.append(alert_tool.run(current_state, message="خطرہ: مری روڈ راولپنڈی میں سیلاب۔ محفوظ مقام پر جائیں۔", target_audience="Rawalpindi/Islamabad Citizens"))
+    responses.append(status_tool.run(current_state, new_status="RESPONDING", reason="Initial response pipeline deployed for Rawalpindi flood incident."))
     
     # Output Results
     for idx, resp in enumerate(responses):

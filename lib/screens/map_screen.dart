@@ -7,6 +7,9 @@ import 'package:khabar/theme/app_colors.dart';
 import 'package:khabar/theme/language_provider.dart';
 import 'package:khabar/api_config.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:khabar/utils/connectivity_service.dart';
+import 'package:khabar/utils/location_helper.dart';
+import 'package:khabar/utils/web_helper.dart';
 
 class MapIncident {
   final String id;
@@ -91,27 +94,28 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _determinePosition() async {
-    bool serviceEnabled;
-    LocationPermission permission;
-
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return; // Service not enabled
-
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) return;
-    }
-    
-    if (permission == LocationPermission.deniedForever) return;
-
-    final position = await Geolocator.getCurrentPosition(locationSettings: const LocationSettings(accuracy: LocationAccuracy.high));
-    if (mounted) {
-      setState(() {
-        _currentPosition = position;
-      });
-      // Optionally center map on user's live location
-      // mapController.animateCamera(CameraUpdate.newLatLng(LatLng(position.latitude, position.longitude)));
+    try {
+      final result = await LocationHelper.fetchLocation();
+      if (mounted) {
+        setState(() {
+          // Convert LatLng back to Position object for compatibility
+          _currentPosition = Position(
+            latitude: result.position.latitude,
+            longitude: result.position.longitude,
+            timestamp: DateTime.now(),
+            accuracy: 0.0,
+            altitude: 0.0,
+            heading: 0.0,
+            speed: 0.0,
+            speedAccuracy: 0.0,
+            altitudeAccuracy: 0.0,
+            headingAccuracy: 0.0,
+          );
+        });
+        debugPrint('[GPS] Map screen user location resolved to (${result.position.latitude}, ${result.position.longitude}) via source: ${result.source}');
+      }
+    } catch (e) {
+      debugPrint("Map screen GPS error: $e");
     }
   }
 
@@ -250,31 +254,59 @@ class _MapScreenState extends State<MapScreen> {
     String locationName = query;
     String urduLocationName = query;
 
-    // 1. First check our local high-speed dictionary of Pakistan cities for instant offline results
+    // 1. First check our local high-speed dictionary — Islamabad & Rawalpindi only
     if (normalized == 'islamabad') {
       targetLatLng = const LatLng(33.6844, 73.0479);
       locationName = 'Islamabad Capital City';
       urduLocationName = 'اسلام آباد وفاقی دارالحکومت';
-    } else if (normalized == 'karachi') {
-      targetLatLng = const LatLng(24.8607, 67.0011);
-      locationName = 'Karachi, Sindh';
-      urduLocationName = 'کراچی، سندھ';
-    } else if (normalized == 'lahore') {
-      targetLatLng = const LatLng(31.5204, 74.3587);
-      locationName = 'Lahore, Punjab';
-      urduLocationName = 'لاہور، پنجاب';
-    } else if (normalized == 'rawalpindi') {
+    } else if (normalized == 'rawalpindi' || normalized == 'rwp') {
       targetLatLng = const LatLng(33.5651, 73.0169);
       locationName = 'Rawalpindi, Punjab';
       urduLocationName = 'راولپنڈی، پنجاب';
-    } else if (normalized == 'peshawar') {
-      targetLatLng = const LatLng(34.0151, 71.5249);
-      locationName = 'Peshawar, KPK';
-      urduLocationName = 'پشاور، خیبر پختونخوا';
     } else if (normalized == 'blue area' || normalized == 'jinnah avenue') {
       targetLatLng = const LatLng(33.7220, 73.0580);
-      locationName = 'Jinnah Avenue, Blue Area';
-      urduLocationName = 'جناح ایونیو، بلیو ایریا';
+      locationName = 'Jinnah Avenue, Blue Area, Islamabad';
+      urduLocationName = 'جناح ایونیو، بلیو ایریا، اسلام آباد';
+    } else if (normalized == 'g-10' || normalized == 'g10') {
+      targetLatLng = const LatLng(33.6938, 73.0551);
+      locationName = 'G-10 Markaz, Islamabad';
+      urduLocationName = 'جی-دس مرکز، اسلام آباد';
+    } else if (normalized == 'g-11' || normalized == 'g11') {
+      targetLatLng = const LatLng(33.7015, 73.0400);
+      locationName = 'G-11, Islamabad';
+      urduLocationName = 'جی-گیارہ، اسلام آباد';
+    } else if (normalized == 'f-7' || normalized == 'f7') {
+      targetLatLng = const LatLng(33.7245, 73.0629);
+      locationName = 'F-7, Islamabad';
+      urduLocationName = 'ایف-سات، اسلام آباد';
+    } else if (normalized == 'f-8' || normalized == 'f8') {
+      targetLatLng = const LatLng(33.7180, 73.0530);
+      locationName = 'F-8, Islamabad';
+      urduLocationName = 'ایف-آٹھ، اسلام آباد';
+    } else if (normalized == 'saddar' || normalized == 'saddar rawalpindi') {
+      targetLatLng = const LatLng(33.5980, 73.0489);
+      locationName = 'Saddar, Rawalpindi';
+      urduLocationName = 'صدر، راولپنڈی';
+    } else if (normalized == 'murree road') {
+      targetLatLng = const LatLng(33.6105, 73.0783);
+      locationName = 'Murree Road, Rawalpindi';
+      urduLocationName = 'مری روڈ، راولپنڈی';
+    } else if (normalized == 'nullah lai') {
+      targetLatLng = const LatLng(33.6200, 73.0700);
+      locationName = 'Nullah Lai, Rawalpindi';
+      urduLocationName = 'نالہ لئی، راولپنڈی';
+    } else if (normalized == 'faizabad') {
+      targetLatLng = const LatLng(33.6601, 73.0789);
+      locationName = 'Faizabad Interchange';
+      urduLocationName = 'فیض آباد انٹرچینج';
+    } else if (normalized == 'bahria town' || normalized == 'bahria') {
+      targetLatLng = const LatLng(33.5300, 72.9800);
+      locationName = 'Bahria Town, Rawalpindi';
+      urduLocationName = 'بحریہ ٹاؤن، راولپنڈی';
+    } else if (normalized == 'dha' || normalized == 'dha rawalpindi') {
+      targetLatLng = const LatLng(33.5500, 73.1000);
+      locationName = 'DHA, Rawalpindi';
+      urduLocationName = 'ڈی ایچ اے، راولپنڈی';
     }
 
     // 2. If not found in local quick list, fetch real-time location via Google Maps Geocoding API on backend
@@ -304,10 +336,12 @@ class _MapScreenState extends State<MapScreen> {
     });
 
     if (targetLatLng != null) {
-      // Smoothly animate Google Map camera to the searched coordinate
-      mapController.animateCamera(
-        CameraUpdate.newLatLngZoom(targetLatLng, 14.5),
-      );
+      // Smoothly animate Google Map camera to the searched coordinate if online
+      if (ConnectivityService().value) {
+        mapController.animateCamera(
+          CameraUpdate.newLatLngZoom(targetLatLng, 14.5),
+        );
+      }
 
       // Setup a dynamic marker for this searched location
       setState(() {
@@ -363,7 +397,7 @@ class _MapScreenState extends State<MapScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Location not found. Please try searching cities like "Karachi", "Lahore", or "Blue Area".'),
+            content: const Text('Location not found. Try: "G-10", "Saddar", "Murree Road", "Faizabad", "Blue Area", or "Bahria Town".'),
             backgroundColor: kEmergencyRed,
             duration: const Duration(seconds: 3),
           ),
@@ -827,21 +861,78 @@ class _MapScreenState extends State<MapScreen> {
 
     return Scaffold(
       body: Stack(
-        children: [
-          // ── 1. Google Maps Base Layer ──
-          GoogleMap(
-            onMapCreated: _onMapCreated,
-            initialCameraPosition: CameraPosition(
-              target: _islamabadCenter,
-              zoom: 14.5,
-            ),
-            mapType: _currentMapType,
-            markers: _createMarkers(),
-            polylines: _createPolylines(),
-            myLocationEnabled: true,
-            myLocationButtonEnabled: true,
-            zoomControlsEnabled: false,
+        children: [          ValueListenableBuilder<bool>(
+            valueListenable: ConnectivityService(),
+            builder: (context, isOnline, child) {
+              if (isOnline && checkGoogleMapsLoaded()) {
+                return GoogleMap(
+                  onMapCreated: _onMapCreated,
+                  initialCameraPosition: CameraPosition(
+                    target: _islamabadCenter,
+                    zoom: 14.5,
+                  ),
+                  mapType: _currentMapType,
+                  markers: _createMarkers(),
+                  polylines: _createPolylines(),
+                  myLocationEnabled: true,
+                  myLocationButtonEnabled: true,
+                  zoomControlsEnabled: false,
+                );
+              } else {
+                return OfflineVectorMap(
+                  incidents: _realIncidents,
+                  resources: _realResources,
+                  userPosition: _currentPosition != null
+                      ? LatLng(_currentPosition!.latitude, _currentPosition!.longitude)
+                      : null,
+                  selectedIncident: _selectedIncident,
+                  onIncidentSelected: (inc) {
+                    setState(() {
+                      _selectedIncident = inc;
+                    });
+                  },
+                );
+              }
+            },
           ),
+
+
+          // ── Offline Overlay Indicator ──
+          ValueListenableBuilder<bool>(
+            valueListenable: ConnectivityService(),
+            builder: (context, isOnline, child) {
+              if (isOnline) return const SizedBox.shrink();
+              final bool isUrdu = LanguageProvider().language == 'Urdu';
+              return Positioned(
+                top: MediaQuery.of(context).padding.top + 80, // Safely below top search bar
+                left: 16,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.75),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.cloud_off, color: Colors.orange, size: 14),
+                      const SizedBox(width: 8),
+                      Text(
+                        isUrdu ? "آف لائن موڈ (محفوظ نقشہ فعال)" : "OFFLINE MODE (Cached Map Active)",
+                        style: GoogleFonts.nunito(
+                          color: Colors.orange,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+
 
           // ── 2. Top Search Bar and Filter Controls ──
           Positioned(
@@ -1310,3 +1401,398 @@ class _MapScreenState extends State<MapScreen> {
       );
   }
 }
+
+class OfflineNode {
+  final String name;
+  final String urduName;
+  final double x;
+  final double y;
+  final double lat;
+  final double lng;
+
+  OfflineNode({
+    required this.name,
+    required this.urduName,
+    required this.x,
+    required this.y,
+    required this.lat,
+    required this.lng,
+  });
+}
+
+class OfflineVectorMap extends StatefulWidget {
+  final List<MapIncident> incidents;
+  final List<dynamic> resources;
+  final LatLng? userPosition;
+  final MapIncident? selectedIncident;
+  final ValueChanged<MapIncident> onIncidentSelected;
+
+  const OfflineVectorMap({
+    super.key,
+    required this.incidents,
+    required this.resources,
+    required this.userPosition,
+    required this.selectedIncident,
+    required this.onIncidentSelected,
+  });
+
+  @override
+  State<OfflineVectorMap> createState() => _OfflineVectorMapState();
+}
+
+class _OfflineVectorMapState extends State<OfflineVectorMap> {
+  final List<OfflineNode> _nodes = [
+    OfflineNode(name: "Sector E-11", urduName: "سیکٹر E-11", x: 120, y: 90, lat: 33.7001, lng: 72.9812),
+    OfflineNode(name: "Sector G-11", urduName: "سیکٹر G-11", x: 120, y: 190, lat: 33.6766, lng: 73.0132),
+    OfflineNode(name: "Sector F-6", urduName: "سیکٹر F-6", x: 550, y: 90, lat: 33.7299, lng: 73.0746),
+    OfflineNode(name: "Blue Area", urduName: "بلیو ایریا", x: 350, y: 140, lat: 33.7182, lng: 73.0605),
+    OfflineNode(name: "I-8 Interchange", urduName: "آئی-8 انٹرچینج", x: 350, y: 410, lat: 33.6698, lng: 73.0741),
+    OfflineNode(name: "Faizabad", urduName: "فیض آباد", x: 550, y: 490, lat: 33.6375, lng: 73.0784),
+    OfflineNode(name: "Shamsabad", urduName: "شمس آباد", x: 550, y: 590, lat: 33.6338, lng: 73.0747),
+    OfflineNode(name: "Saddar Rawalpindi", urduName: "صدر راولپنڈی", x: 550, y: 710, lat: 33.5984, lng: 73.0544),
+    OfflineNode(name: "Nullah Lai Area", urduName: "نالہ لئی کا علاقہ", x: 300, y: 610, lat: 33.6105, lng: 73.0783),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final String currentLang = LanguageProvider().language;
+    final bool isUrdu = currentLang == 'اردو';
+
+    return Container(
+      color: const Color(0xFF0F172A), // Premium dark slate background
+      child: InteractiveViewer(
+        maxScale: 3.5,
+        minScale: 0.5,
+        boundaryMargin: const EdgeInsets.all(100),
+        child: Center(
+          child: Container(
+            width: 700,
+            height: 800,
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A),
+              border: Border.all(color: Colors.white10),
+            ),
+            child: Stack(
+              children: [
+                // 1. Blueprint Grid Background
+                ...List.generate(15, (i) {
+                  return Positioned(
+                    left: i * 50.0,
+                    top: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 0.5,
+                      color: Colors.white.withValues(alpha: 0.05),
+                    ),
+                  );
+                }),
+                ...List.generate(17, (i) {
+                  return Positioned(
+                    top: i * 50.0,
+                    left: 0,
+                    right: 0,
+                    child: Container(
+                      height: 0.5,
+                      color: Colors.white.withValues(alpha: 0.05),
+                    ),
+                  );
+                }),
+
+                // 2. Vector Roads & Corridors
+                // Jinnah Avenue (F-6 to E-11 via Blue Area)
+                _buildRoadLine(120, 90, 350, 140, Colors.teal.shade700),
+                _buildRoadLine(350, 140, 550, 90, Colors.teal.shade700),
+                _buildRoadLine(120, 90, 120, 190, Colors.teal.shade700),
+                
+                // Expressway (F-6 down to I-8 and Faizabad)
+                _buildRoadLine(550, 90, 350, 410, Colors.teal.shade700),
+                _buildRoadLine(350, 410, 550, 490, Colors.teal.shade700),
+                
+                // Murree Road (Faizabad to Saddar)
+                _buildRoadLine(550, 490, 550, 590, Colors.teal.shade700),
+                _buildRoadLine(550, 590, 550, 710, Colors.teal.shade700),
+
+                // Nullah Lai Stream
+                _buildRoadLine(120, 190, 300, 610, Colors.blue.withValues(alpha: 0.3), isStream: true),
+                _buildRoadLine(300, 610, 550, 710, Colors.blue.withValues(alpha: 0.3), isStream: true),
+
+                // Dynamic Detour highlight for F-6 / G-11 / Faizabad / Nullah Lai
+                _buildDetourHighlights(),
+
+                // 3. Render Offline Sector Nodes
+                ..._nodes.map((node) {
+                  final isSelected = widget.selectedIncident != null &&
+                      (widget.selectedIncident!.location.toLowerCase().contains(node.name.toLowerCase()) ||
+                       widget.selectedIncident!.title.toLowerCase().contains(node.name.toLowerCase()) ||
+                       node.name.toLowerCase().contains(widget.selectedIncident!.location.toLowerCase()));
+
+                  return Positioned(
+                    left: node.x - 45,
+                    top: node.y - 45,
+                    child: GestureDetector(
+                      onTap: () {
+                        // Create a mock incident for this sector node on-tap
+                        final mockInc = MapIncident(
+                          id: 'OFF-INC-${node.name.split(" ").last}',
+                          title: '${node.name} Alert',
+                          urduTitle: '${node.urduName} الرٹ',
+                          romanUrduTitle: '${node.name} Alert',
+                          position: LatLng(node.lat, node.lng),
+                          severity: 'P1 CRISIS',
+                          location: node.name,
+                          urduLocation: node.urduName,
+                          responsePlanHeader: 'Offline Emergency Plan',
+                          urduResponsePlanHeader: 'آف لائن ہنگامی منصوبہ',
+                          steps: [
+                            ResponseStep(
+                              title: 'Offline warning broadcasted locally.',
+                              urduTitle: 'آف لائن وارننگ مقامی طور پر نشر کی گئی۔',
+                              subtitle: 'Check offline chatbot for guidelines.',
+                              urduSubtitle: 'رہنما خطوط کے لیے آف لائن چیٹ بوٹ چیک کریں۔',
+                            ),
+                            ResponseStep(
+                              title: 'Local rescue points activated.',
+                              urduTitle: 'مقامی ریسکیو پوائنٹس فعال ہو گئے۔',
+                              subtitle: 'Rescue 1122 standby.',
+                              urduSubtitle: 'ریسکیو 1122 اسٹینڈ بائی پر ہے۔',
+                            ),
+                          ],
+                        );
+                        widget.onIncidentSelected(mockInc);
+                      },
+                      child: Container(
+                        width: 90,
+                        height: 90,
+                        alignment: Alignment.center,
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                if (isSelected)
+                                  Container(
+                                    width: 32,
+                                    height: 32,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: Colors.red.withValues(alpha: 0.3),
+                                    ),
+                                  ),
+                                Container(
+                                  width: 16,
+                                  height: 16,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: isSelected ? Colors.red : const Color(0xFF0F5B5C),
+                                    border: Border.all(color: Colors.white, width: 2),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: Colors.black45,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                isUrdu ? node.urduName : node.name,
+                                style: GoogleFonts.nunito(
+                                  color: isSelected ? Colors.redAccent : Colors.white70,
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+
+                // 4. Render user location dot (if available)
+                if (widget.userPosition != null)
+                  Positioned(
+                    left: 350 - 10,
+                    top: 250 - 10,
+                    child: Container(
+                      width: 20,
+                      height: 20,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.blue.withValues(alpha: 0.3),
+                      ),
+                      child: Center(
+                        child: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.blue,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                // 5. Offline Indicators Overlay
+                Positioned(
+                  top: 20,
+                  left: 20,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.6),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.white10),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.wifi_off, color: Colors.orange, size: 14),
+                        const SizedBox(width: 8),
+                        Text(
+                          isUrdu ? "آف لائن ویکٹر نقشہ" : "OFFLINE VECTOR MAP",
+                          style: GoogleFonts.nunito(
+                            color: Colors.orange,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRoadLine(double x1, double y1, double x2, double y2, Color color, {bool isStream = false}) {
+    return Positioned.fill(
+      child: CustomPaint(
+        painter: LinePainter(x1: x1, y1: y1, x2: x2, y2: y2, color: color, isStream: isStream),
+      ),
+    );
+  }
+
+  Widget _buildDetourHighlights() {
+    final active = widget.selectedIncident;
+    if (active == null) return const SizedBox.shrink();
+
+    // Map selected location name to detour paths
+    final loc = active.location.toLowerCase();
+    
+    double startX = 350, startY = 410; // I-8
+    double endX = 550, endY = 490; // Faizabad
+    
+    if (loc.contains("g-11") || loc.contains("e-11")) {
+      startX = 120; startY = 90;
+      endX = 350; endY = 140;
+    } else if (loc.contains("f-6") || loc.contains("blue area")) {
+      startX = 350; startY = 140;
+      endX = 550; endY = 90;
+    } else if (loc.contains("saddar") || loc.contains("shamsabad") || loc.contains("lai")) {
+      startX = 550; startY = 490;
+      endX = 550; endY = 710;
+    }
+
+    return Positioned.fill(
+      child: CustomPaint(
+        painter: DetourPainter(startX: startX, startY: startY, endX: endX, endY: endY),
+      ),
+    );
+  }
+}
+
+class LinePainter extends CustomPainter {
+  final double x1;
+  final double y1;
+  final double x2;
+  final double y2;
+  final Color color;
+  final bool isStream;
+
+  LinePainter({required this.x1, required this.y1, required this.x2, required this.y2, required this.color, required this.isStream});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = isStream ? 8.0 : 4.0
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    if (isStream) {
+      // Draw wavy line for water streams
+      final path = Path();
+      path.moveTo(x1, y1);
+      double midX = (x1 + x2) / 2;
+      double midY = (y1 + y2) / 2;
+      path.quadraticBezierTo(midX - 20, midY - 20, x2, y2);
+      canvas.drawPath(path, paint);
+    } else {
+      canvas.drawLine(Offset(x1, y1), Offset(x2, y2), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class DetourPainter extends CustomPainter {
+  final double startX;
+  final double startY;
+  final double endX;
+  final double endY;
+
+  DetourPainter({required this.startX, required this.startY, required this.endX, required this.endY});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // 1. Red Blocked Road
+    final redPaint = Paint()
+      ..color = Colors.red.withValues(alpha: 0.8)
+      ..strokeWidth = 6.0
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(startX, startY), Offset(endX, endY), redPaint);
+
+    // 2. Green Dotted Detour
+    final greenPaint = Paint()
+      ..color = Colors.greenAccent
+      ..strokeWidth = 4.0
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+
+    // Draw arc detour
+    final path = Path();
+    path.moveTo(startX, startY);
+    
+    // Control point for curve
+    double ctrlX = (startX + endX) / 2 - 80;
+    double ctrlY = (startY + endY) / 2 - 80;
+    path.quadraticBezierTo(ctrlX, ctrlY, endX, endY);
+
+    // Render as dashed/dotted path manually
+    final pMetrics = path.computeMetrics();
+    for (var metric in pMetrics) {
+      double length = metric.length;
+      double step = 10.0;
+      for (double i = 0.0; i < length; i += step * 2) {
+        final pathSegment = metric.extractPath(i, i + step);
+        canvas.drawPath(pathSegment, greenPaint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+

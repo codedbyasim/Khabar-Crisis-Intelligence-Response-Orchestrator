@@ -19,60 +19,57 @@ load_dotenv()
 
 class MapsService:
     # Pakistan areas dictionary for instant offline geocoding
+    # Islamabad & Rawalpindi only — KHABAR is exclusively active in the twin cities
     PAKISTAN_LOCATIONS: Dict[str, Dict[str, Any]] = {
+        # ── Core Cities ──
         "islamabad": {"lat": 33.6844, "lng": 73.0479, "city": "Islamabad"},
         "rawalpindi": {"lat": 33.5651, "lng": 73.0169, "city": "Rawalpindi"},
-        "lahore": {"lat": 31.5204, "lng": 74.3587, "city": "Lahore"},
-        "karachi": {"lat": 24.8607, "lng": 67.0011, "city": "Karachi"},
-        "peshawar": {"lat": 34.0151, "lng": 71.5249, "city": "Peshawar"},
-        "quetta": {"lat": 30.1798, "lng": 66.9750, "city": "Quetta"},
-        "multan": {"lat": 30.1575, "lng": 71.5249, "city": "Multan"},
-        "faisalabad": {"lat": 31.4504, "lng": 73.1350, "city": "Faisalabad"},
-        "hyderabad": {"lat": 25.3960, "lng": 68.3578, "city": "Hyderabad"},
+        # ── Islamabad Sectors ──
         "g-10": {"lat": 33.6938, "lng": 73.0551, "city": "Islamabad"},
         "g-11": {"lat": 33.7015, "lng": 73.0400, "city": "Islamabad"},
-        "g-9": {"lat": 33.7060, "lng": 73.0630, "city": "Islamabad"},
-        "f-7": {"lat": 33.7245, "lng": 73.0629, "city": "Islamabad"},
-        "f-8": {"lat": 33.7180, "lng": 73.0530, "city": "Islamabad"},
-        "blue area": {"lat": 33.7220, "lng": 73.0580, "city": "Islamabad"},
+        "g-9":  {"lat": 33.7060, "lng": 73.0630, "city": "Islamabad"},
+        "g-8":  {"lat": 33.7080, "lng": 73.0700, "city": "Islamabad"},
+        "f-7":  {"lat": 33.7245, "lng": 73.0629, "city": "Islamabad"},
+        "f-8":  {"lat": 33.7180, "lng": 73.0530, "city": "Islamabad"},
+        "f-6":  {"lat": 33.7299, "lng": 73.0746, "city": "Islamabad"},
+        "f-10": {"lat": 33.7100, "lng": 73.0200, "city": "Islamabad"},
+        "e-11": {"lat": 33.7001, "lng": 72.9812, "city": "Islamabad"},
+        "i-8":  {"lat": 33.6700, "lng": 73.0600, "city": "Islamabad"},
+        "i-10": {"lat": 33.6600, "lng": 73.0350, "city": "Islamabad"},
+        "h-8":  {"lat": 33.6800, "lng": 73.0150, "city": "Islamabad"},
+        "blue area":     {"lat": 33.7220, "lng": 73.0580, "city": "Islamabad"},
         "jinnah avenue": {"lat": 33.7220, "lng": 73.0580, "city": "Islamabad"},
-        "murree road": {"lat": 33.6105, "lng": 73.0783, "city": "Rawalpindi"},
+        "zero point":    {"lat": 33.7090, "lng": 73.0499, "city": "Islamabad"},
+        "faizabad":      {"lat": 33.6375, "lng": 73.0784, "city": "Islamabad"},
+        # ── Rawalpindi Areas ──
+        "murree road":       {"lat": 33.6105, "lng": 73.0783, "city": "Rawalpindi"},
         "saddar rawalpindi": {"lat": 33.5980, "lng": 73.0489, "city": "Rawalpindi"},
-        "dha lahore": {"lat": 31.4697, "lng": 74.4082, "city": "Lahore"},
-        "gulberg lahore": {"lat": 31.5120, "lng": 74.3500, "city": "Lahore"},
-        "saddar karachi": {"lat": 24.8538, "lng": 67.0174, "city": "Karachi"},
-        "clifton": {"lat": 24.8072, "lng": 67.0298, "city": "Karachi"},
-        "defence karachi": {"lat": 24.7898, "lng": 67.0650, "city": "Karachi"},
-        "johar town": {"lat": 31.4697, "lng": 74.2712, "city": "Lahore"},
-        "model town": {"lat": 31.4911, "lng": 74.3138, "city": "Lahore"},
-        "hayatabad": {"lat": 34.0031, "lng": 71.4578, "city": "Peshawar"},
-        "cantonment": {"lat": 33.5651, "lng": 73.0169, "city": "Rawalpindi"},
+        "saddar":            {"lat": 33.5980, "lng": 73.0489, "city": "Rawalpindi"},
+        "cantonment":        {"lat": 33.5651, "lng": 73.0169, "city": "Rawalpindi"},
+        "nullah lai":        {"lat": 33.6200, "lng": 73.0700, "city": "Rawalpindi"},
+        "shamsabad":         {"lat": 33.6400, "lng": 73.0600, "city": "Rawalpindi"},
+        "satellite town":    {"lat": 33.5800, "lng": 73.0400, "city": "Rawalpindi"},
+        "bahria town":       {"lat": 33.5300, "lng": 72.9800, "city": "Rawalpindi"},
+        "dha rawalpindi":    {"lat": 33.5500, "lng": 73.1000, "city": "Rawalpindi"},
+        "westridge":         {"lat": 33.5900, "lng": 73.0200, "city": "Rawalpindi"},
+        "liaquat bagh":      {"lat": 33.5960, "lng": 73.0480, "city": "Rawalpindi"},
+        "peshawar road rwp": {"lat": 33.6063, "lng": 73.0233, "city": "Rawalpindi"},
+        "IJP road":          {"lat": 33.6601, "lng": 73.0789, "city": "Rawalpindi"},
     }
 
+    # Hospitals for Islamabad & Rawalpindi only
     HOSPITALS_BY_CITY: Dict[str, List[Dict]] = {
         "Islamabad": [
-            {"name": "PIMS Hospital", "distance_km": 2.1, "estimated_travel_time_mins": 8, "status": "OPERATIONAL"},
-            {"name": "Poly Clinic Hospital", "distance_km": 3.5, "estimated_travel_time_mins": 12, "status": "OPERATIONAL"},
-            {"name": "Shifa International Hospital", "distance_km": 5.2, "estimated_travel_time_mins": 18, "status": "OPERATIONAL"},
+            {"name": "PIMS Hospital (Islamabad)",        "distance_km": 2.1, "estimated_travel_time_mins": 8,  "status": "OPERATIONAL"},
+            {"name": "Poly Clinic Hospital (Islamabad)", "distance_km": 3.5, "estimated_travel_time_mins": 12, "status": "OPERATIONAL"},
+            {"name": "Shifa International Hospital",     "distance_km": 5.2, "estimated_travel_time_mins": 18, "status": "OPERATIONAL"},
+            {"name": "Federal Government Hospital H-8",  "distance_km": 4.0, "estimated_travel_time_mins": 14, "status": "OPERATIONAL"},
         ],
         "Rawalpindi": [
-            {"name": "Holy Family Hospital", "distance_km": 1.9, "estimated_travel_time_mins": 7, "status": "OPERATIONAL"},
-            {"name": "Benazir Bhutto Hospital", "distance_km": 3.0, "estimated_travel_time_mins": 12, "status": "OPERATIONAL"},
-            {"name": "District Headquarters Hospital", "distance_km": 2.5, "estimated_travel_time_mins": 10, "status": "OPERATIONAL"},
-        ],
-        "Lahore": [
-            {"name": "Mayo Hospital", "distance_km": 2.8, "estimated_travel_time_mins": 10, "status": "OPERATIONAL"},
-            {"name": "Services Hospital", "distance_km": 3.5, "estimated_travel_time_mins": 14, "status": "OPERATIONAL"},
-            {"name": "Jinnah Hospital", "distance_km": 4.1, "estimated_travel_time_mins": 16, "status": "OPERATIONAL"},
-        ],
-        "Karachi": [
-            {"name": "Aga Khan University Hospital", "distance_km": 3.2, "estimated_travel_time_mins": 15, "status": "OPERATIONAL"},
-            {"name": "Civil Hospital Karachi", "distance_km": 4.1, "estimated_travel_time_mins": 20, "status": "OPERATIONAL"},
-            {"name": "Liaquat National Hospital", "distance_km": 5.0, "estimated_travel_time_mins": 22, "status": "OPERATIONAL"},
-        ],
-        "Peshawar": [
-            {"name": "Lady Reading Hospital", "distance_km": 2.5, "estimated_travel_time_mins": 10, "status": "OPERATIONAL"},
-            {"name": "Khyber Teaching Hospital", "distance_km": 3.0, "estimated_travel_time_mins": 12, "status": "OPERATIONAL"},
+            {"name": "Holy Family Hospital (Rawalpindi)",         "distance_km": 1.9, "estimated_travel_time_mins": 7,  "status": "OPERATIONAL"},
+            {"name": "Benazir Bhutto Hospital (Rawalpindi)",      "distance_km": 3.0, "estimated_travel_time_mins": 12, "status": "OPERATIONAL"},
+            {"name": "District Headquarters Hospital (Rawalpindi)","distance_km": 2.5, "estimated_travel_time_mins": 10, "status": "OPERATIONAL"},
+            {"name": "CMH Rawalpindi",                           "distance_km": 4.2, "estimated_travel_time_mins": 15, "status": "OPERATIONAL"},
         ],
     }
 
@@ -133,7 +130,7 @@ class MapsService:
                 params={"q": f"{location_text} Pakistan", "format": "json", "limit": 1},
                 headers={"User-Agent": "KhabarEmergencyApp/1.0"},
                 timeout=5.0,
-                verify=False,
+                verify=True,
             )
             if response.status_code == 200:
                 data = response.json()
@@ -394,23 +391,31 @@ class MapsService:
         }
 
     def _infer_city(self, lat: float, lng: float) -> str:
+        """KHABAR is active only in Islamabad & Rawalpindi twin cities."""
         if 33.5 < lat < 33.85 and 72.8 < lng < 73.25:
-            return "Islamabad" if lng > 73.0 else "Rawalpindi"
-        if 24.7 < lat < 25.1 and 66.8 < lng < 67.3:
-            return "Karachi"
-        if 31.3 < lat < 31.7 and 74.1 < lng < 74.6:
-            return "Lahore"
-        if 33.9 < lat < 34.1 and 71.4 < lng < 71.7:
-            return "Peshawar"
+            return "Islamabad" if lng > 73.03 else "Rawalpindi"
+        # Any coordinates outside twin cities default to Islamabad
         return "Islamabad"
 
     def _get_infrastructure(self, city: str) -> List[str]:
+        """Critical infrastructure for Islamabad & Rawalpindi only."""
         infra = {
-            "Islamabad": ["CDA Power Grid", "Islamabad Expressway", "Pakistan Secretariat", "F-6 Water Treatment"],
-            "Karachi": ["K-Electric Grid", "Port Qasim", "Karachi Circular Railway", "Hub Power Plant"],
-            "Lahore": ["WAPDA Grid Lahore", "Ring Road", "Lahore Metro Orange Line", "Ravi River Barrage"],
-            "Rawalpindi": ["Rawalpindi Cantonment", "Chaklala Air Base", "Faizabad Interchange"],
-            "Peshawar": ["Ring Road Peshawar", "Peshawar BRT", "Charsadda Road"],
+            "Islamabad": [
+                "IESCO Power Grid (Islamabad)",
+                "Islamabad Expressway",
+                "Pakistan Secretariat",
+                "CDA Water Treatment Plant",
+                "Faizabad Interchange",
+                "Zero Point Interchange",
+            ],
+            "Rawalpindi": [
+                "IESCO Grid (Rawalpindi)",
+                "Nullah Lai Flood Channel",
+                "Rawalpindi Cantonment",
+                "Faizabad Interchange",
+                "Murree Road Corridor",
+                "IJP Road",
+            ],
         }
         return infra.get(city, infra["Islamabad"])
 

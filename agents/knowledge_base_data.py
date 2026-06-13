@@ -15,11 +15,11 @@ client = genai.Client(api_key=api_key) if api_key and not api_key.endswith("HERE
 
 # The Knowledge Base Documents
 PAKISTAN_NDMA_PROTOCOLS = [
-    "NDMA Flood SOP-01: 1. Deploy WASA dewatering pumps immediately. 2. Disconnect grid power (WAPDA/KE) in submerged areas. 3. Dispatch Rescue 1122 boats if water exceeds 3ft. 4. Evacuate basements.",
-    "NDMA Quake SOP-02: 1. Dispatch Urban Search and Rescue (USAR) teams with K9 units. 2. Request heavy lifting machinery from CDCR/NDMA. 3. Establish medical triage zone 100 meters away from fall zone.",
-    "NDMA Heatwave SOP-03: 1. Set up NDMA cooling centers. 2. Coordinate with Edhi/Chhipa for hydration ambulances. 3. Issue public alert avoiding sun from 11 AM to 4 PM. 4. Prevent unannounced load-shedding via K-Electric/IESCO.",
-    "Traffic Police SOP-04: 1. Secure perimeter via Motorway Police/Traffic Wardens. 2. Dispatch Rescue 1122 trauma ambulances. 3. Clear wreckage within 2 hours. 4. Reroute heavy traffic to alternate arteries.",
-    "Fire Brigade SOP-05: 1. Dispatch minimum 2 Fire Tenders. 2. Disconnect local gas (Sui Gas) and electric supply. 3. Evacuate adjacent structures within 50 meters. 4. Request WASA water bowsers for backup supply."
+    "NDMA Flood SOP-01 (Islamabad/Rawalpindi): 1. Deploy WASA dewatering pumps at Nullah Lai and all flooded underpasses. 2. Disconnect IESCO grid power in submerged areas. 3. Dispatch Rescue 1122 boats if water exceeds 3ft. 4. Evacuate basement residents in Rawalpindi Saddar and low-lying G-10 sectors.",
+    "NDMA Quake SOP-02: 1. Dispatch Urban Search and Rescue (USAR) teams with K9 units. 2. Request heavy lifting machinery from CDA/NDMA Islamabad. 3. Establish medical triage zone 100 meters from collapse site. 4. Coordinate with PIMS and Holy Family Hospital trauma departments.",
+    "NDMA Heatwave SOP-03 (Islamabad/Rawalpindi): 1. Set up CDA/RDA cooling centers in G-10, F-7, and Saddar. 2. Coordinate with Rescue 1122 for heat stroke response ambulances. 3. Issue public alert: avoid sun from 11 AM to 4 PM. 4. Prevent unannounced load-shedding via IESCO coordination.",
+    "Traffic Police SOP-04 (Twin Cities): 1. Secure perimeter via Islamabad/Rawalpindi Traffic Police. 2. Dispatch Rescue 1122 trauma ambulances to incident site. 3. Clear wreckage within 2 hours. 4. Reroute heavy traffic: Murree Road → Peshawar Road alternate; Jinnah Avenue → Constitution Avenue alternate.",
+    "Fire Brigade SOP-05: 1. Dispatch minimum 2 Fire Tenders from nearest Rawalpindi/Islamabad station. 2. Disconnect local gas (Sui Northern Gas) and IESCO electric supply. 3. Evacuate adjacent structures within 50 meters. 4. Request WASA water bowsers from nearest depot for backup supply."
 ]
 
 # In-memory vector store

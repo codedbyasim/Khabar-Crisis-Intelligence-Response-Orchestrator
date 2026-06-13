@@ -148,6 +148,6 @@ class AnalysisAgent:
             return output
 
         except ValidationError as e:
-            raise RuntimeError(f"Gemini API returned invalid JSON structure: {str(e)}")
+            raise RuntimeError(f"AIML API returned invalid JSON structure: {str(e)}")
         except Exception as e:
             raise RuntimeError(f"API Error: {str(e)}")

@@ -5,16 +5,20 @@ import 'package:http/http.dart' as http;
 import 'package:khabar/api_config.dart';
 import 'package:khabar/theme/app_colors.dart';
 import 'package:khabar/theme/language_provider.dart';
+import 'package:khabar/utils/connectivity_service.dart';
+import 'package:khabar/utils/local_llm_service.dart';
 
 class ChatMessage {
   final String text;
   final bool isUser;
   final DateTime timestamp;
+  final bool isOffline;
 
   ChatMessage({
     required this.text,
     required this.isUser,
     required this.timestamp,
+    this.isOffline = false,
   });
 }
 
@@ -31,38 +35,54 @@ class _AiChatScreenState extends State<AiChatScreen> {
   final List<ChatMessage> _messages = [];
   bool _isSending = false;
 
-  // Selected Sector/Location state
-  String _selectedSector = "Faizabad (Rawalpindi)";
+  String _getWelcomeMessage() {
+    final String currentLang = LanguageProvider().language;
+    if (currentLang == 'اردو') {
+      return "السلام علیکم! میں خبر چیٹ بوٹ ہوں، آپ کا مددگار بحرانی معاون۔ میں آپ کو اسلام آباد اور راولپنڈی میں سیلاب، بارش، آگ اور دیگر حادثات کی معلومات اور حفاظتی رہنما خطوط فراہم کر سکتا ہوں۔ میں آپ کی کیا مدد کروں؟";
+    } else if (currentLang == 'Roman Urdu') {
+      return "Assalam-o-Alaikum! Main Khabar Chatbot hoon, aapka dynamic crisis assistant. Main aapko Islamabad aur Rawalpindi mein live incidents, weather updates aur emergency guidelines faraham kar sakta hoon. Main aapki kya madad karoon?";
+    } else {
+      return "Hello! I am Khabar Chatbot, your crisis intelligence assistant. I can provide real-time incident reports, weather updates, and emergency safety guidelines for Islamabad and Rawalpindi. How can I help you today?";
+    }
+  }
 
-  final List<String> _sectors = [
-    "Faizabad (Rawalpindi)",
-    "Saddar (Rawalpindi)",
-    "Shamsabad (Rawalpindi)",
-    "Nullah Lai Area (Rawalpindi)",
-    "Sector G-11 (Islamabad)",
-    "Sector F-6 (Islamabad)",
-    "Sector E-11 (Islamabad)",
-    "Blue Area (Islamabad)",
-    "I-8 Interchange (Islamabad)"
-  ];
-
-  final List<String> _suggestedPrompts = [
-    "Flood safety tips batayein?",
-    "WASA dewatering team kab tak pahuchegi?",
-    "Islamabad key emergency numbers?",
-    "Rawalpindi weather update?"
-  ];
+  List<String> _getSuggestedPrompts() {
+    final String currentLang = LanguageProvider().language;
+    if (currentLang == 'اردو') {
+      return [
+        "سیلاب سے بچاؤ کی تدابیر بتائیں؟",
+        "واسا کی ٹیم کب تک پہنچے گی؟",
+        "اسلام آباد کے ہنگامی نمبرز؟",
+        "راولپنڈی کے موسم کی اپ ڈیٹ؟"
+      ];
+    } else if (currentLang == 'Roman Urdu') {
+      return [
+        "Flood safety tips batayein?",
+        "WASA dewatering team kab tak pahuchegi?",
+        "Islamabad key emergency numbers?",
+        "Rawalpindi weather update?"
+      ];
+    } else {
+      return [
+        "What are the flood safety tips?",
+        "When will WASA response team arrive?",
+        "Emergency contact numbers for Islamabad?",
+        "Weather update for Rawalpindi?"
+      ];
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     // Welcome message
     _messages.add(ChatMessage(
-      text: "Assalam-o-Alaikum! Main Khabar Chatbot hoon, aapka dynamic crisis assistant. Main aapko Islamabad aur Rawalpindi mein live incidents, weather updates aur emergency guidelines faraham kar sakta hoon. Main aapki kya madad karoon?",
+      text: _getWelcomeMessage(),
       isUser: false,
       timestamp: DateTime.now(),
     ));
   }
+
 
   Future<void> _sendMessage(String text) async {
     if (text.trim().isEmpty) return;
@@ -78,6 +98,38 @@ class _AiChatScreenState extends State<AiChatScreen> {
 
     _messageController.clear();
     _scrollToBottom();
+
+    // ── Check Connectivity for Offline Mode ──
+    bool isOnline = ConnectivityService().value;
+    if (!isOnline) {
+      try {
+        final localReply = await LocalLlmService().getOfflineResponse(
+          text,
+          LanguageProvider().language,
+          LanguageProvider().region,
+        );
+        if (mounted) {
+          setState(() {
+            _messages.add(ChatMessage(
+              text: localReply,
+              isUser: false,
+              timestamp: DateTime.now(),
+              isOffline: true,
+            ));
+          });
+        }
+      } catch (e) {
+        _showError("Offline model error: ${e.toString()}");
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isSending = false;
+          });
+        }
+        _scrollToBottom();
+      }
+      return;
+    }
 
     try {
       // Build history for conversational memory
@@ -101,7 +153,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
           "message": text,
           "history": history,
           "language": LanguageProvider().language,
-          "user_location": _selectedSector,
+          "user_location": LanguageProvider().region,
         }),
       );
 
@@ -113,6 +165,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
               text: data['response'],
               isUser: false,
               timestamp: DateTime.now(),
+              isOffline: false,
             ));
           });
         } else {
@@ -222,7 +275,11 @@ class _AiChatScreenState extends State<AiChatScreen> {
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      "Khabar Chatbot is thinking...",
+                      LanguageProvider().language == 'اردو'
+                          ? "چیٹ بوٹ سوچ رہا ہے..."
+                          : LanguageProvider().language == 'Roman Urdu'
+                              ? "Khabar Chatbot soch raha hai..."
+                              : "Khabar Chatbot is thinking...",
                       style: GoogleFonts.nunito(
                         fontSize: 12,
                         color: kTextLight,
@@ -275,16 +332,35 @@ class _AiChatScreenState extends State<AiChatScreen> {
                 height: 1.4,
               ),
             ),
-            const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.bottomRight,
-              child: Text(
-                "${msg.timestamp.hour.toString().padLeft(2, '0')}:${msg.timestamp.minute.toString().padLeft(2, '0')}",
-                style: GoogleFonts.nunito(
-                  color: msg.isUser ? Colors.white70 : kTextLight,
-                  fontSize: 10,
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                if (!msg.isUser && msg.isOffline)
+                  Row(
+                    children: [
+                      const Icon(Icons.offline_bolt_outlined, color: Colors.orange, size: 12),
+                      const SizedBox(width: 4),
+                      Text(
+                        "Local AI Mode",
+                        style: GoogleFonts.nunito(
+                          color: Colors.orange.shade700,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  )
+                else
+                  const SizedBox.shrink(),
+                Text(
+                  "${msg.timestamp.hour.toString().padLeft(2, '0')}:${msg.timestamp.minute.toString().padLeft(2, '0')}",
+                  style: GoogleFonts.nunito(
+                    color: msg.isUser ? Colors.white70 : kTextLight,
+                    fontSize: 10,
+                  ),
                 ),
-              ),
+              ],
             ),
           ],
         ),
@@ -293,15 +369,16 @@ class _AiChatScreenState extends State<AiChatScreen> {
   }
 
   Widget _buildSuggestedPromptsSection() {
+    final prompts = _getSuggestedPrompts();
     return Container(
       height: 45,
       margin: const EdgeInsets.only(bottom: 8),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: _suggestedPrompts.length,
+        itemCount: prompts.length,
         itemBuilder: (context, index) {
-          final prompt = _suggestedPrompts[index];
+          final prompt = prompts[index];
           return Padding(
             padding: const EdgeInsets.only(right: 8),
             child: ActionChip(
@@ -325,6 +402,14 @@ class _AiChatScreenState extends State<AiChatScreen> {
   }
 
   Widget _buildInputArea() {
+    final String currentLang = LanguageProvider().language;
+    String hintText = "Type message in English...";
+    if (currentLang == 'اردو') {
+      hintText = "اپنا پیغام یہاں لکھیں...";
+    } else if (currentLang == 'Roman Urdu') {
+      hintText = "Message Roman Urdu ya English mein likhein...";
+    }
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: const BoxDecoration(
@@ -340,56 +425,13 @@ class _AiChatScreenState extends State<AiChatScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Elegant Dropdown Sector Selector row
-          Row(
-            children: [
-              const Icon(Icons.my_location, size: 16, color: kPrimaryTeal),
-              const SizedBox(width: 8),
-              Text(
-                "Aapki Location (Select Sector):",
-                style: GoogleFonts.nunito(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: kTextLight,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _selectedSector,
-                    isExpanded: true,
-                    style: GoogleFonts.nunito(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: kPrimaryTeal,
-                    ),
-                    items: _sectors.map((String sector) {
-                      return DropdownMenuItem<String>(
-                        value: sector,
-                        child: Text(sector),
-                      );
-                    }).toList(),
-                    onChanged: (String? newValue) {
-                      if (newValue != null) {
-                        setState(() {
-                          _selectedSector = newValue;
-                        });
-                      }
-                    },
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const Divider(height: 12, thickness: 0.5),
           Row(
             children: [
               Expanded(
                 child: TextField(
                   controller: _messageController,
                   decoration: InputDecoration(
-                    hintText: "Type message in Roman Urdu or English...",
+                    hintText: hintText,
                     hintStyle: GoogleFonts.nunito(fontSize: 14, color: kTextLight),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(24),

@@ -9,7 +9,7 @@ def get_live_weather(lat: float, lng: float) -> dict:
     """Fetches real-time weather from Open-Meteo for validation/cross-referencing."""
     try:
         url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lng}&current=temperature_2m,rain,showers,snowfall,wind_speed_10m&timezone=auto"
-        with httpx.Client(timeout=5, verify=False) as client:
+        with httpx.Client(timeout=5, verify=True) as client:
             response = client.get(url)
             if response.status_code == 200:
                 current = response.json().get("current", {})
@@ -188,6 +188,6 @@ LIVE ENVIRONMENTAL SENSOR CONTEXT:
             return output
 
         except ValidationError as e:
-            raise RuntimeError(f"Gemini API returned invalid JSON structure: {str(e)}")
+            raise RuntimeError(f"AIML API returned invalid JSON structure: {str(e)}")
         except Exception as e:
             raise RuntimeError(f"API/Network Error: {str(e)}")

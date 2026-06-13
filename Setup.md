@@ -1,157 +1,246 @@
-# 🚀 KHABAR (خبر) — Environment Setup & Installation Guide
+# 🚀 KHABAR (خبر) — Setup & Installation Guide
 
-This guide walks you through setting up the entire development environment for the **KHABAR (Crisis Intelligence & Response Orchestrator)** platform, including the Python FastAPI backend, the Supabase PostgreSQL cloud database, and the Flutter mobile client.
+Complete setup guide for the **KHABAR Crisis Intelligence & Response Orchestrator** platform.  
+Covers: Python FastAPI backend, Local Gemma GGUF model, Supabase database, and Flutter mobile client.
 
 ---
 
 ## 📋 1. Prerequisites
-Ensure you have the following installed on your local machine:
-- **Python 3.10+** (Add to system PATH)
-- **Flutter SDK v3.16+** & **Dart SDK**
-- **Android Studio** (for emulator) or physical Android device with USB debugging enabled
-- **Git**
+
+| Requirement | Version | Notes |
+|---|---|---|
+| Python | 3.10+ | Add to system PATH |
+| Flutter SDK | 3.16+ | With Dart SDK |
+| Android Studio | Latest | For Android Emulator |
+| Git | Any | |
+| RAM | 8 GB+ | Local Gemma model needs ~3–4 GB |
 
 ---
 
-## 🔑 2. Get API Keys & Setup Environment Variables
+## 🔑 2. API Keys & Environment Setup
 
-### **Step 2.1: Create Backend Environment File**
-Create a new file named `.env` inside the `agents/` folder:
-`f:\khabar\agents\.env`
+### **Step 2.1 — Create Backend `.env` File**
+Create `h:\khabar\agents\.env` with the following content:
 
-Populate it with the following configuration:
 ```env
-# Google Gemini Model API Key
-GEMINI_API_KEY=your_gemini_api_key_here
+# ── PRIMARY AI API ──
+# AIML API key (get from: https://aimlapi.com)
+AIML_API_KEY=your_aiml_api_key_here
 
-# Google Maps Platform Geocoding & Distance APIs
+# ── MAPS ──
+# Google Maps Platform — Geocoding, Distance Matrix, Places APIs
 GOOGLE_MAPS_API_KEY=your_google_maps_key_here
 
-# Central Supabase PostgreSQL Database URL
-DATABASE_URL=postgresql://postgres.your_project_id:your_db_password@aws-0-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require
+# ── DATABASE ──
+# Supabase PostgreSQL connection string
+DATABASE_URL=postgresql://postgres.your_project_id:your_password@aws-0-us-east-1.pooler.supabase.com:6543/postgres?sslmode=require
 
-# TomTom Traffic Flow API Key (Optional)
-TOMTOM_API_KEY=your_tomtom_key_here
-
-# Weather API Key (Optional, Open-Meteo runs free without a key)
-OPENWEATHER_API_KEY=your_openweather_key_here
+# ── EXTERNAL FEEDS (Optional) ──
+TOMTOM_API_KEY=your_tomtom_key_here         # Traffic flow data
+OPENWEATHER_API_KEY=your_openweather_key_here  # Weather alerts
+SERPAPI_KEY=your_serpapi_key_here            # Google News live feed
 ```
 
-### **Step 2.2: Add Firebase Credentials**
-Ensure your Firebase Admin service account key JSON file is placed at:
-`f:\khabar\agents\khabar-46771-firebase-adminsdk-fbsvc-e3117a9fbb.json`
+> **Note:** `GEMINI_API_KEY` is NO LONGER used. Project now uses `AIML_API_KEY`.
 
-*(This is used for sending real-time FCM bilingual alerts to your mobile devices).*
+### **Step 2.2 — Add Firebase Credentials**
+Place your Firebase Admin service account JSON at:
+```
+h:\khabar\agents\khabar-46771-firebase-adminsdk-fbsvc-e3117a9fbb.json
+```
+*(Firebase Console → Project Settings → Service Accounts → Generate new private key)*
 
 ---
 
-## 🗄️ 3. Supabase Database Schema Setup
-Execute the following SQL queries in your Supabase SQL Editor to initialize the central database tables:
+## 🗄️ 3. Supabase Database Setup
+
+Run these SQL queries in your **Supabase SQL Editor**:
 
 ```sql
--- 1. Create Incidents Table
+-- 1. Incidents Table
 CREATE TABLE IF NOT EXISTS incidents (
-    incident_id VARCHAR(255) PRIMARY KEY,
-    incident_type VARCHAR(100),
-    lat DOUBLE PRECISION,
-    lng DOUBLE PRECISION,
-    priority VARCHAR(10),
-    status VARCHAR(50),
-    confidence DOUBLE PRECISION,
-    location JSONB,
-    traces JSONB,
-    before_state JSONB,
-    after_state JSONB,
-    state_diff JSONB,
+    incident_id        VARCHAR(255) PRIMARY KEY,
+    incident_type      VARCHAR(100),
+    lat                DOUBLE PRECISION,
+    lng                DOUBLE PRECISION,
+    priority           VARCHAR(10),
+    status             VARCHAR(50),
+    confidence         DOUBLE PRECISION,
+    location           JSONB,
+    traces             JSONB,
+    before_state       JSONB,
+    after_state        JSONB,
+    state_diff         JSONB,
     public_alerts_sent INTEGER DEFAULT 0,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    created_at         TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2. Create Resource Inventory Table
+-- 2. Resource Inventory Table
 CREATE TABLE IF NOT EXISTS resources (
-    resource_id VARCHAR(100) PRIMARY KEY,
-    resource_type VARCHAR(100),
-    status VARCHAR(50),
-    current_location VARCHAR(255),
-    assigned_incident VARCHAR(255),
-    quantity_available INTEGER,
-    last_updated TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    resource_id        VARCHAR(100) PRIMARY KEY,
+    name               VARCHAR(150) NOT NULL,
+    type               VARCHAR(50)  NOT NULL,
+    quantity           INTEGER DEFAULT 1,
+    status             VARCHAR(50)  DEFAULT 'available',
+    location           JSONB
 );
 ```
 
 ---
 
-## 💻 4. Python Backend Configuration
+## 💻 4. Python Backend Setup
 
-1. **Open a terminal in the root directory:**
-   ```powershell
-   cd f:\khabar
-   ```
+```powershell
+# Step 1 — Go to project root
+cd h:\khabar
 
-2. **Create and activate a virtual environment:**
-   ```powershell
-   python -m venv venv
-   # On Windows:
-   .\venv\Scripts\activate
-   # On macOS/Linux:
-   source venv/bin/activate
-   ```
+# Step 2 — Create virtual environment
+python -m venv venv
+.\venv\Scripts\activate   # Windows
 
-3. **Install python packages:**
-   ```powershell
-   pip install -r requirements.txt
-   ```
+# Step 3 — Install all dependencies
+pip install -r requirements.txt
 
-4. **Seed database resources (Run once):**
-   ```powershell
-   python seed_resources.py
-   ```
+# Step 4 — Install Local Gemma model support (first time only)
+# Note: This may take 5–10 mins to compile on Windows
+pip install llama-cpp-python
 
-5. **Start the API Server:**
-   ```powershell
-   python api_server.py
-   ```
-   *The API gateway runs on `http://127.0.0.1:8000`*
+# Step 5 — Seed database resources (run ONCE)
+python seed_resources.py
 
-6. **Start the Web Dashboard:**
-   *Open a new terminal tab, activate the virtual environment, and run:*
-   ```powershell
-   python dashboard_server.py
-   ```
-   *Access the web console at `http://127.0.0.1:8001`*
+# Step 6 — Start the API Server
+$env:PYTHONIOENCODING="utf-8"
+python api_server.py
+```
+
+✅ Backend will start at: `http://127.0.0.1:8000`  
+📖 Swagger Docs at: `http://127.0.0.1:8000/docs`
+
+### **Optional: Start Web Dashboard**
+```powershell
+# New terminal (venv activated)
+python dashboard_server.py
+```
+📊 Dashboard at: `http://127.0.0.1:8001`
 
 ---
 
-## 📱 5. Flutter Client Mobile App Setup
+## 🤖 5. Local Gemma Model Setup
 
-### **Step 5.1: Configure API Base URL**
-Open `lib/api_config.dart` and modify the server URL to point to your backend:
-- If running on **Android Emulator**, use: `http://10.0.2.2:8000`
-- If running on **Physical Device**, use your PC's local network IP (e.g. `http://192.168.1.100:8000`)
+The local model provides **offline AI fallback** when AIML API is unavailable.
 
-### **Step 5.2: Configure Google Maps SDK Keys**
-- **Android:** Paste your Google Maps API Key in `android/app/src/main/AndroidManifest.xml`:
-  ```xml
-  <meta-data 
-      android:name="com.google.android.geo.API_KEY"
-      android:value="your_google_maps_key_here"/>
-  ```
+**Model location:**
+```
+h:\khabar\models\gemma-4-E2B-it-UD-IQ2_M.gguf   (2.3 GB)
+```
 
-- **iOS:** Paste your Google Maps API Key in `ios/Runner/AppDelegate.swift`:
-  ```swift
-  GMSServices.provideAPIKey("your_google_maps_key_here")
-  ```
+The model **loads automatically** on first use (lazy loading). No extra setup needed — just keep the `.gguf` file in the `models/` folder.
 
-### **Step 5.3: Build & Launch App**
-1. Fetch Flutter packages:
-   ```bash
-   flutter pub get
-   ```
-2. Run the application:
-   ```bash
-   flutter run
-   ```
-3. To compile release APK:
-   ```bash
-   flutter build apk --release
-   ```
+**Verify the model is working:**
+```powershell
+# With backend running, test the offline chat endpoint:
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8000/local-chat" `
+  -Method POST `
+  -ContentType "application/json" `
+  -Body '{"message":"flood emergency", "language":"English", "sector":"G-10 Islamabad"}'
+```
+
+Expected response:
+```json
+{
+  "success": true,
+  "response": "...",
+  "mode": "local_gemma",
+  "model": "gemma-4-E2B-it-UD-IQ2_M.gguf"
+}
+```
+
+---
+
+## 📱 6. Flutter Mobile App Setup
+
+### **Step 6.1 — Install Dependencies**
+```bash
+cd h:\khabar
+flutter pub get
+```
+
+### **Step 6.2 — Configure API URL**
+Open [`lib/api_config.dart`](lib/api_config.dart). The URL is now **automatically detected**:
+- **Web (Chrome):** `http://127.0.0.1:8000` ← auto
+- **Android Emulator:** `http://10.0.2.2:8000` ← auto
+- **Physical Device:** Edit the file manually to your PC's local IP (e.g. `http://192.168.1.100:8000`)
+
+### **Step 6.3 — Configure Google Maps Key**
+
+**Android** — Edit `android/app/src/main/AndroidManifest.xml`:
+```xml
+<meta-data
+    android:name="com.google.android.geo.API_KEY"
+    android:value="your_google_maps_key_here"/>
+```
+
+**iOS** — Edit `ios/Runner/AppDelegate.swift`:
+```swift
+GMSServices.provideAPIKey("your_google_maps_key_here")
+```
+
+### **Step 6.4 — Run the App**
+```bash
+flutter run -d chrome     # Web browser (recommended for quick test)
+flutter run               # Android Emulator or connected device
+flutter build apk --release  # Build release APK
+```
+
+---
+
+## 🔄 7. Full System Startup (Quick Reference)
+
+```powershell
+# Terminal 1 — Backend
+cd h:\khabar
+.\venv\Scripts\activate
+$env:PYTHONIOENCODING="utf-8"
+python api_server.py
+
+# Terminal 2 — Flutter App
+cd h:\khabar
+flutter run -d chrome
+
+# Terminal 3 — Web Dashboard (optional)
+cd h:\khabar
+.\venv\Scripts\activate
+python dashboard_server.py
+```
+
+---
+
+## 🧩 8. Requirements Reference (`requirements.txt`)
+
+| Package | Purpose |
+|---|---|
+| `fastapi` | REST API framework |
+| `uvicorn` | ASGI server |
+| `pydantic` | Data validation (v2) |
+| `openai` | AIML API client (OpenAI-compatible) |
+| `llama-cpp-python` | Local Gemma GGUF inference (CPU) |
+| `psycopg2-binary` | Supabase PostgreSQL connector |
+| `firebase-admin` | FCM push notifications |
+| `httpx` | Async HTTP client |
+| `python-dotenv` | `.env` file loading |
+| `python-multipart` | File upload support |
+| `google-search-results` | SerpAPI news feed |
+
+---
+
+## 🐛 9. Common Issues & Fixes
+
+| Problem | Solution |
+|---|---|
+| `UnicodeEncodeError` on Windows | Run `$env:PYTHONIOENCODING="utf-8"` before `python api_server.py` |
+| `llama-cpp-python` compile error | Use: `pip install llama-cpp-python --prefer-binary` |
+| Flutter web CORS error | Ensure `allow_origins=["*"]` is set in `api_server.py` (already done) |
+| Android Emulator can't connect | Backend must be on `10.0.2.2:8000` — `api_config.dart` handles this automatically |
+| Local model slow (~10–15 sec) | Normal for CPU mode. GPU: set `n_gpu_layers=35` in `agents/local_model.py` |
+| `DATABASE_URL` not set | Create `agents/.env` file with your Supabase connection string |

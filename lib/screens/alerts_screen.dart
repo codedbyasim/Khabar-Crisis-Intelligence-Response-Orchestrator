@@ -184,29 +184,25 @@ class _AlertsScreenState extends State<AlertsScreen> {
     });
 
     try {
-      const apiKey = 'e1310da5ab09d0c4bfb32e0bfc5e514c8c3a29248d2173eb666546c34fc4ca5c';
-      final String region = LanguageProvider().region.split(',').first.trim();
-      // Added crisis-focused keywords and 'when:7d' constraint to ensure outdated news isn't returned
-      final url = Uri.parse('https://serpapi.com/search.json?engine=google_news&q=${Uri.encodeComponent(region)}+(emergency+OR+accident+OR+rain+OR+flood+OR+protest+OR+alert)+when:7d&api_key=$apiKey');
-      
+      final url = Uri.parse('${ApiConfig.baseUrl}/live-news');
       final response = await http.get(url).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final List results = data['news_results'] ?? [];
+        final List results = json.decode(response.body);
         List<AlertItem> loadedAlerts = [];
 
         for (var i = 0; i < results.length; i++) {
           final article = results[i];
           final String title = article['title'] ?? 'Emergency Report';
-          final String sourceName = article['source']?['name'] ?? 'Local Source';
+          final String urduTitle = article['urduTitle'] ?? title;
+          final String sourceName = article['source'] ?? 'Local Source';
           final String dateStr = article['date'] ?? '';
           final String? link = article['link'];
 
           loadedAlerts.add(
             AlertItem(
               title: title,
-              urduTitle: title, // Translate if needed, using english for now
+              urduTitle: urduTitle,
               location: sourceName,
               time: dateStr,
               icon: _getIconForTitle(title),
@@ -227,7 +223,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
         }
       }
     } catch (e) {
-      debugPrint('SerpAPI fetch error: $e');
+      debugPrint('Backend live-news fetch error: $e');
     }
 
     // Roll back to RSS backup if query fails

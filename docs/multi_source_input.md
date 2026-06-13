@@ -1,39 +1,149 @@
-# 📸 Multi-Source Input Pipelines
+# 📥 Multi-Source Input System
 
-KHABAR provides citizens with multiple friction-free channels to report metropolitan emergencies, built to handle real-world operational challenges such as local dialects, noisy environments, and unverified reports.
-
----
-
-## 💬 1. Noisy & Informal Text Processing (Roman Urdu)
-Metropolitan citizens in Pakistan frequently report crises using a blend of languages, primarily English, Urdu, and **Roman Urdu** (Urdu written in the Latin alphabet, e.g., *"G-10 mein pani bhar gaya hai, gaariyan phans gayi hain"*). 
-
-### How it works:
-1. The **FastAPI Backend Gateway** receives the unstructured text payload via the `POST /report/text` endpoint.
-2. The payload is passed to the **Detection Agent** using the `google/gemini-2.5-flash` model.
-3. A specialized system prompt instructs Gemini to analyze the informal syntax, extract key entities (e.g., location landmarks like "G-10", "George Town"), detect the type of disaster (e.g., urban flooding), and estimate a confidence score.
+KHABAR accepts crisis signals from **three distinct input modalities** — text, image, and voice — all processed through the same 4-agent pipeline.
 
 ---
 
-## 🎙️ 2. Speech-to-Text Voice Pipeline
-To support hands-free reporting during active crises, KHABAR features a voice reporting interface in the Flutter app (`VoiceReportScreen`).
+## Input Modalities
 
-### How it works:
-1. The citizen records up to 30 seconds of raw audio (supporting English, Urdu, Punjabi, or Pashto).
-2. The Flutter application records the audio in `.wav` or `.m4a` format and sends it to the backend via `POST /report/voice`.
-3. The backend (`gemini_speech.py`) consumes the raw audio file and directly interfaces with the **Google Gemini API**'s native audio parsing capabilities using the `gemini-2.5-flash` model.
-4. Gemini transcribes the audio and extracts the semantic emergency content in a single pass without needing separate Whisper or secondary translation APIs, preserving colloquial nuances.
+```
+┌─────────────────────────────────────────────────────────┐
+│              CITIZEN INPUT MODALITIES                   │
+│                                                         │
+│  ┌────────────────┐  ┌────────────────┐  ┌──────────┐  │
+│  │  📝 TEXT       │  │  📷 IMAGE      │  │ 🎙 VOICE │  │
+│  │  /report/text  │  │  /report/image │  │ /report/ │  │
+│  │                │  │                │  │ voice    │  │
+│  │ Urdu, English  │  │ JPEG/PNG       │  │ M4A/WAV  │  │
+│  │ Roman Urdu     │  │ + description  │  │ + photo  │  │
+│  │ Punjabi        │  │                │  │          │  │
+│  └───────┬────────┘  └───────┬────────┘  └────┬─────┘  │
+│          └──────────────┬────┘                │         │
+│                         │    RawCrisisSignal   │         │
+└─────────────────────────┼──────────────────────┘         
+                          ↓
+              KhabarCrewOrchestrator.process_incident()
+                          ↓
+              [4-Agent Pipeline: Detection → Execution]
+```
 
 ---
 
-## 📷 3. Vision-Based Damage Verification
-Unverified emergency reports can clog up local rescue services. KHABAR includes a photo reporting pipeline (`PhotoVerificationScreen`) to assess damage objectively.
+## 1. 📝 Text Input (`POST /report/text`)
 
-### How it works:
-1. The citizen snaps a photo of the incident scene (e.g., structural collapse, road pileup, active fire).
-2. The image file is uploaded to the backend via `POST /report/image` alongside any user comments.
-3. The backend (`gemini_vision.py`) loads the image binary and forwards it to `gemini-2.5-flash` (Vision configuration).
-4. The model processes the visual cues to:
-   - Identify the exact disaster signature (e.g., building debris vs. rising water).
-   - Rate structural integrity damage on a percentage scale.
-   - Verify if the user's report is genuine or a false alarm.
-   - Output structured JSON to prioritize the incident in the backend priority queue.
+**Supported Languages:**
+- English
+- اردو (Urdu — Arabic script)
+- Roman Urdu (e.g., "Nullah Lai mein paani aa gaya")
+- Punjabi
+
+**Handling:** Raw text is passed directly to the Detection Agent as `raw_content`.
+
+**Flutter Screen:** `lib/screens/text_signal_screen.dart`
+- Google Maps draggable marker for GPS coordinates
+- Language confidence indicator
+- Real-time character count
+
+
+---
+
+## 2. 📷 Image Input (`POST /report/image`)
+
+**Accepted formats:** JPEG, PNG  
+**Processing:** AIML Vision API (OpenAI-compatible, base64 encoded)
+
+**Two-step process:**
+```
+1. AIML Vision API analyzes image
+   → crisis_type, severity, priority, confidence, detected_elements
+
+2. Vision result is combined with any text description
+   → merged into RawCrisisSignal → 4-agent pipeline
+```
+
+**Vision Output Example:**
+```json
+{
+  "crisis_type": "urban_flooding",
+  "severity": "HIGH",
+  "priority": "P2",
+  "confidence": 0.95,
+  "description": "Flooding of roadway with multiple partially submerged vehicles.",
+  "detected_elements": ["floodwater", "submerged_car", "road_closure"]
+}
+```
+
+**Flutter Screen:** `lib/screens/photo_verification_screen.dart`
+- Multi-Source capture: Live camera shutter OR local gallery photo upload (via `image_picker`)
+- Optional text description field alongside photo
+- Interactive preview showing details before sending to the Gemini AI pipeline
+
+---
+
+## 3. 🎙 Voice Input (`POST /report/voice`)
+
+**Accepted formats:** M4A, WAV, OGG  
+**Processing:** OpenAI Whisper API via AIML API endpoint
+
+**Optional:** Attach a photo alongside the voice recording for dual-modal analysis.
+
+**Two-step process:**
+```
+1. Whisper API transcribes audio
+   → detected_language, transcription_original (Urdu script or Roman),
+     transcription_english (translated)
+
+2. If photo attached → Vision API runs simultaneously
+   → Both results merged into combined RawCrisisSignal
+
+3. Combined signal → 4-agent pipeline
+```
+
+**Speech Output Example:**
+```json
+{
+  "detected_language": "Urdu",
+  "transcription_original": "گاڑیاں ڈوب رہی ہیں اور راستہ بند ہے",
+  "transcription_english": "Cars are sinking and the road is blocked.",
+  "audio_quality": "clear",
+  "confidence": 0.92
+}
+```
+
+**Flutter Screen:** `lib/screens/voice_report_screen.dart`
+- Multi-Source capture: Record live voice (mic) OR upload pre-recorded audio files (via `file_picker`)
+- Optional photo attachment
+- Animated waveform amplitude visualizer
+
+---
+
+## 4. 🤖 Automated Ingestion (`automated_ingestion.py`)
+
+Beyond manual citizen reports, KHABAR automatically monitors:
+
+| Source | Trigger Condition | Signal Type |
+|---|---|---|
+| Open-Meteo API | Precipitation > 50mm/hr | `AUTOMATED_WEATHER` |
+| Open-Meteo API | Temperature > 43°C | `AUTOMATED_HEATWAVE` |
+| TomTom Traffic | Speed < 30% of free-flow | `AUTOMATED_TRAFFIC` |
+
+These auto-generated signals enter the same `KhabarCrewOrchestrator.process_incident()` pipeline as manual reports.
+
+---
+
+## 5. Signal Lifecycle
+
+```
+RawCrisisSignal created
+  ├── signal_id: "SIG-{timestamp}-{TXT|IMG|VOI}"
+  ├── source_type: TEXT_ROMAN_URDU | IMAGE_SUMMARY | VOICE_TRANSCRIPT | AUTOMATED_*
+  ├── raw_content: string
+  ├── timestamp: ISO 8601
+  └── metadata: {lat, lng, vision_result?, speech_result?}
+
+         ↓ orchestrator.process_incident(signal)
+
+  Immediately saved to Supabase with status="PROCESSING"
+  Background task runs 4-agent pipeline
+  Status updated to "PIPELINE_COMPLETE" or "REJECTED"
+```

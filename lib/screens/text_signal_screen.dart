@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:khabar/theme/app_colors.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:khabar/api_config.dart';
+import 'package:khabar/utils/location_helper.dart';
+import 'package:khabar/utils/web_helper.dart';
+import 'package:khabar/utils/connectivity_service.dart';
+
 
 import 'package:khabar/theme/language_provider.dart';
 import 'package:khabar/screens/incident_tracker_screen.dart';
@@ -22,6 +26,8 @@ class _TextSignalScreenState extends State<TextSignalScreen> {
   bool _isUrdu = false;
   late LatLng _markerPosition;
   bool _isSubmitting = false;
+  bool _isFetchingLocation = false;
+  String? _locationStatus; // null = default, 'ok' = GPS success, 'err' = failed
   GoogleMapController? _mapController;
 
   @override
@@ -41,33 +47,62 @@ class _TextSignalScreenState extends State<TextSignalScreen> {
   }
 
   Future<void> _getCurrentLocation() async {
+    // On Web: browser GPS is IP-based (gives wrong country), skip auto-fetch.
+    // User can still tap the "Use My Location" button which will call _fetchGPS().
+    if (kIsWeb) return;
+    // On mobile: auto-fetch on startup silently
+    await _fetchGPS(showErrors: false);
+  }
+
+  /// Fetch GPS or IP fallback location and animate the camera.
+  Future<void> _fetchGPS({bool showErrors = true}) async {
+    if (_isFetchingLocation) return;
+    if (mounted) setState(() => _isFetchingLocation = true);
+
     try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) return;
-
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) return;
-      }
-
-      if (permission == LocationPermission.deniedForever) return;
-
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-      );
+      final result = await LocationHelper.fetchLocation();
       
-      final latLng = LatLng(position.latitude, position.longitude);
       if (mounted) {
         setState(() {
-          _markerPosition = latLng;
+          _markerPosition = result.position;
+          _locationStatus = result.source != 'default' ? 'ok' : 'err';
+          _isFetchingLocation = false;
         });
         _mapController?.animateCamera(
-          CameraUpdate.newLatLng(latLng),
+          CameraUpdate.newLatLngZoom(result.position, 16),
         );
+
+        if (showErrors && mounted) {
+          if (result.source == 'ip') {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Emulator GPS mock coordinates. Loaded approximate location via IP: (${result.position.latitude.toStringAsFixed(4)}, ${result.position.longitude.toStringAsFixed(4)})'),
+                backgroundColor: kPrimaryTeal,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          } else if (result.source == 'default') {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Could not fetch location (GPS/IP unavailable). Tap map to manually select.'),
+                backgroundColor: Colors.orange,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Current GPS location set successfully.'),
+                backgroundColor: kPrimaryTeal,
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+        }
       }
     } catch (e) {
-      debugPrint("Error fetching automatic GPS location: $e");
+      debugPrint('[GPS] Error: $e');
+      if (mounted) setState(() { _locationStatus = 'err'; _isFetchingLocation = false; });
     }
   }
 
@@ -203,37 +238,152 @@ class _TextSignalScreenState extends State<TextSignalScreen> {
               ),
             ),
             const SizedBox(height: 12),
+            // ── Map + Use My Location button ──
             Container(
-              height: 250,
+              height: 260,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: Colors.grey.shade300),
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
-                child: GoogleMap(
-                  initialCameraPosition: CameraPosition(
-                    target: _markerPosition,
-                    zoom: 15,
-                  ),
-                  onMapCreated: (controller) {
-                    _mapController = controller;
-                  },
-                  myLocationEnabled: true,
-                  myLocationButtonEnabled: true,
-                  markers: {
-                    Marker(
-                      markerId: const MarkerId('incident_location'),
-                      position: _markerPosition,
-                      draggable: true,
-                      onDragEnd: (newPosition) {
-                        setState(() {
-                          _markerPosition = newPosition;
-                        });
+                child: Stack(
+                  children: [
+                    ValueListenableBuilder<bool>(
+                      valueListenable: ConnectivityService(),
+                      builder: (context, isOnline, child) {
+                        if (isOnline && checkGoogleMapsLoaded()) {
+                          return GoogleMap(
+                            initialCameraPosition: CameraPosition(
+                              target: _markerPosition,
+                              zoom: 15,
+                            ),
+                            onMapCreated: (controller) {
+                              _mapController = controller;
+                            },
+                            myLocationEnabled: true,
+                            myLocationButtonEnabled: true,
+                            markers: {
+                              Marker(
+                                markerId: const MarkerId('incident_location'),
+                                position: _markerPosition,
+                                draggable: true,
+                                onDragEnd: (newPosition) {
+                                  setState(() {
+                                    _markerPosition = newPosition;
+                                  });
+                                },
+                              ),
+                            },
+                          );
+                        } else {
+                          return Container(
+                            color: Colors.grey.shade200,
+                            alignment: Alignment.center,
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Offline Map Mode Active',
+                                  style: GoogleFonts.nunito(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: kTextDark,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                                  child: Text(
+                                    'Google Maps is unavailable offline. Using coordinates: (${_markerPosition.latitude.toStringAsFixed(4)}, ${_markerPosition.longitude.toStringAsFixed(4)})',
+                                    style: GoogleFonts.nunito(
+                                      fontSize: 12,
+                                      color: kTextLight,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
                       },
                     ),
-                  },
+                    // ── "Use My Location" floating button ──
+                    Positioned(
+                      top: 10,
+                      right: 10,
+                      child: GestureDetector(
+                        onTap: () => _fetchGPS(showErrors: true),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.15),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (_isFetchingLocation)
+                                const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: kPrimaryTeal,
+                                  ),
+                                )
+                              else
+                                Icon(
+                                  _locationStatus == 'ok'
+                                      ? Icons.my_location
+                                      : Icons.location_searching,
+                                  size: 14,
+                                  color: _locationStatus == 'ok'
+                                      ? kPrimaryTeal
+                                      : Colors.grey.shade600,
+                                ),
+                              const SizedBox(width: 6),
+                              Text(
+                                _isFetchingLocation
+                                    ? 'Locating...'
+                                    : _locationStatus == 'ok'
+                                        ? 'Location Set ✓'
+                                        : 'Use My Location',
+                                style: GoogleFonts.nunito(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold,
+                                  color: _locationStatus == 'ok'
+                                      ? kPrimaryTeal
+                                      : Colors.grey.shade700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
+              ),
+            ),
+            const SizedBox(height: 6),
+            // ── Location hint text ──
+            Text(
+              'Tap the map or drag the pin to set incident location',
+              style: GoogleFonts.nunito(
+                fontSize: 11,
+                color: kTextLight,
               ),
             ),
           ],

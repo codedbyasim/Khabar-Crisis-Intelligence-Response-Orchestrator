@@ -5,11 +5,13 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
-import 'package:geolocator/geolocator.dart';
 import 'package:khabar/theme/app_colors.dart';
 import 'package:khabar/theme/language_provider.dart';
 import 'package:khabar/screens/incident_tracker_screen.dart';
 import 'package:khabar/api_config.dart';
+import 'package:khabar/utils/location_helper.dart';
+import 'package:image_picker/image_picker.dart';
+
 
 class PhotoVerificationScreen extends StatefulWidget {
   const PhotoVerificationScreen({super.key});
@@ -38,25 +40,13 @@ class _PhotoVerificationScreenState extends State<PhotoVerificationScreen> {
 
   Future<void> _fetchDeviceLocation() async {
     try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) return;
-
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) return;
-      }
-
-      if (permission == LocationPermission.deniedForever) return;
-
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-      );
+      final result = await LocationHelper.fetchLocation();
       if (mounted) {
         setState(() {
-          _lat = position.latitude;
-          _lng = position.longitude;
+          _lat = result.position.latitude;
+          _lng = result.position.longitude;
         });
+        debugPrint('[GPS] Photo screen location resolved to ($_lat, $_lng) via source: ${result.source}');
       }
     } catch (e) {
       debugPrint("Photo screen GPS error: $e");
@@ -103,6 +93,24 @@ class _PhotoVerificationScreenState extends State<PhotoVerificationScreen> {
       debugPrint("Error taking picture: $e");
     }
   }
+
+  Future<void> _uploadFromGallery() async {
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+      );
+      if (picked != null) {
+        setState(() {
+          _capturedImage = picked;
+        });
+      }
+    } catch (e) {
+      debugPrint("Gallery picker error: $e");
+    }
+  }
+
 
   Future<void> _analyzeAndSubmit() async {
     if (_capturedImage == null) return;
@@ -220,31 +228,68 @@ class _PhotoVerificationScreenState extends State<PhotoVerificationScreen> {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         Text(
-          'Align subject within grid',
-          style: GoogleFonts.nunito(fontSize: 16, color: kTextLight),
+          'Align subject within grid or upload photo / گیلری سے اپ لوڈ کریں',
+          style: GoogleFonts.nunito(fontSize: 15, color: kTextLight),
         ),
-        const SizedBox(height: 32),
-        InkWell(
-          onTap: _takePicture,
-          child: Container(
-            width: 80,
-            height: 80,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: kPrimaryTeal, width: 4),
-            ),
-            child: Center(
+        const SizedBox(height: 24),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Gallery button
+            InkWell(
+              onTap: _uploadFromGallery,
+              borderRadius: BorderRadius.circular(28),
               child: Container(
-                width: 64,
-                height: 64,
-                decoration: const BoxDecoration(
-                  color: kPrimaryTeal,
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: Colors.white,
                   shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.1),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                  border: Border.all(color: Colors.grey.shade300),
                 ),
-                child: const Icon(Icons.camera_alt, color: Colors.white, size: 32),
+                child: const Icon(Icons.photo_library_outlined, color: kPrimaryTeal, size: 26),
               ),
             ),
-          ),
+            const SizedBox(width: 36),
+            
+            // Camera capture button
+            InkWell(
+              onTap: _takePicture,
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: kPrimaryTeal, width: 4),
+                ),
+                child: Center(
+                  child: Container(
+                    width: 64,
+                    height: 64,
+                    decoration: const BoxDecoration(
+                      color: kPrimaryTeal,
+                      shape: BoxShape.circle,
+                ),
+                    child: const Icon(Icons.camera_alt, color: Colors.white, size: 32),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 36),
+            
+            // Empty placeholder for symmetry
+            const SizedBox(
+              width: 56,
+              height: 56,
+            ),
+          ],
         ),
       ],
     );

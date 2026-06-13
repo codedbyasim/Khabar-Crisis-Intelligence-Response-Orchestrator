@@ -20,12 +20,12 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 TOMTOM_API_KEY = os.getenv("TOMTOM_API_KEY", "")
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY", "")
 
-# Pakistan coordinates for simulated scenario injections
+# Islamabad & Rawalpindi coordinates for simulated scenario injections
 PAKISTAN_REGIONS = [
-    {"name": "G-10 Markaz, Islamabad", "lat": 33.6938, "lng": 73.0551},
-    {"name": "Faizabad Interchange, Islamabad", "lat": 33.6601, "lng": 73.0789},
-    {"name": "Gulberg Main Blvd, Lahore",      "lat": 31.5120, "lng": 74.3500},
-    {"name": "Saddar, Karachi",                "lat": 24.8538, "lng": 67.0174},
+    {"name": "G-10 Markaz, Islamabad",          "lat": 33.6938, "lng": 73.0551},
+    {"name": "Faizabad Interchange, Rawalpindi", "lat": 33.6601, "lng": 73.0789},
+    {"name": "Murree Road, Rawalpindi",           "lat": 33.6105, "lng": 73.0783},
+    {"name": "Nullah Lai, Rawalpindi",            "lat": 33.6200, "lng": 73.0700},
 ]
 
 
@@ -34,16 +34,16 @@ def get_simulated_weather_fallback() -> dict:
     """Generates a realistic, highly detailed weather alert for Pakistan."""
     weather_scenarios = [
         {
-            "content": "[REAL WEATHER INGESTION] Monsoon Torrential Rain alert for Islamabad. Live rainfall: 35mm/hr. High risk of urban flooding.",
+            "content": "[REAL WEATHER INGESTION] Monsoon Torrential Rain alert for Islamabad. Live rainfall: 35mm/hr. High risk of urban flooding near Nullah Lai and G-10 Markaz.",
             "lat": 33.6844, "lng": 73.0479
         },
         {
-            "content": "[REAL WEATHER INGESTION] Extreme Heatwave Alert for Karachi. Current temperature: 43°C. Stay hydrated and avoid direct sunlight.",
-            "lat": 24.8607, "lng": 67.0011
+            "content": "[REAL WEATHER INGESTION] Extreme Heatwave Alert for Rawalpindi. Current temperature: 43°C. Avoid direct sunlight and stay indoors between 11AM-4PM.",
+            "lat": 33.5651, "lng": 73.0169
         },
         {
-            "content": "[REAL WEATHER INGESTION] Severe Storm Alert in Lahore Gulberg. Live wind speeds: 65 km/h. Possible infrastructure blockages.",
-            "lat": 31.5204, "lng": 74.3587
+            "content": "[REAL WEATHER INGESTION] Severe Storm Alert for G-11 Islamabad. Live wind speeds: 65 km/h. Risk of infrastructure damage and tree falls.",
+            "lat": 33.7015, "lng": 73.0400
         }
     ]
     logging.info("[Automated Ingestion] 🛡️ Network Timeout/Proxy block caught. Initiating High-Fidelity Weather Simulator Fallback.")
@@ -53,16 +53,16 @@ def get_simulated_traffic_fallback() -> dict:
     """Generates a realistic, highly detailed traffic congestion alert for Pakistan."""
     traffic_scenarios = [
         {
-            "content": "[TOMTOM TRAFFIC ENGINE] Severe congestion at G-10 Markaz, Islamabad. Speed: 5 km/h. High volume detected.",
+            "content": "[TOMTOM TRAFFIC ENGINE] Severe congestion at G-10 Markaz, Islamabad. Speed: 5 km/h. Possible road blockage near Jinnah Avenue.",
             "lat": 33.6938, "lng": 73.0551
         },
         {
-            "content": "[TOMTOM TRAFFIC ENGINE] Standstill traffic on IJP Road near Faizabad Interchange. Expected delay: 45 minutes.",
+            "content": "[TOMTOM TRAFFIC ENGINE] Standstill traffic on IJP Road near Faizabad Interchange, Rawalpindi. Expected delay: 45 minutes.",
             "lat": 33.6601, "lng": 73.0789
         },
         {
-            "content": "[TOMTOM TRAFFIC ENGINE] Severe gridlock on Shahrae Faisal near Saddar, Karachi. Average speed: 8 km/h.",
-            "lat": 24.8538, "lng": 67.0174
+            "content": "[TOMTOM TRAFFIC ENGINE] Heavy congestion on Murree Road, Rawalpindi near Saddar. Average speed: 8 km/h. Multi-vehicle incident suspected.",
+            "lat": 33.6105, "lng": 73.0783
         }
     ]
     logging.info("[Automated Ingestion] 🛡️ TomTom Key/Network Inactive. Initiating High-Fidelity Traffic Simulator Fallback.")
@@ -76,7 +76,7 @@ def sync_fetch_real_weather():
     if OPENWEATHER_API_KEY:
         try:
             url = f"https://api.openweathermap.org/data/2.5/weather?lat=33.6844&lon=73.0479&appid={OPENWEATHER_API_KEY}&units=metric"
-            with httpx.Client(timeout=4, verify=False) as client:
+            with httpx.Client(timeout=4, verify=True) as client:
                 response = client.get(url)
                 if response.status_code == 200:
                     data = response.json()
@@ -104,7 +104,7 @@ def sync_fetch_real_weather():
         "?latitude=33.6844&longitude=73.0479"
         "&current=temperature_2m,rain&timezone=Asia%2FKarachi"
     )
-    with httpx.Client(timeout=4, verify=False) as client:
+    with httpx.Client(timeout=4, verify=True) as client:
         response = client.get(url)
         if response.status_code == 200:
             data = response.json()
@@ -141,7 +141,7 @@ def sync_verify_tomtom_key():
         "https://api.tomtom.com/traffic/services/4/flowSegmentData/absolute/10/json"
         f"?point=51.5074,-0.1278&key={TOMTOM_API_KEY}"
     )
-    with httpx.Client(timeout=4, verify=False) as client:
+    with httpx.Client(timeout=4, verify=True) as client:
         response = client.get(url)
         return response.status_code
 
@@ -163,10 +163,10 @@ async def poll_traffic_api():
 
     # Pakistan-specific realistic traffic scenarios
     alerts = [
-        {"content": "[TOMTOM TRAFFIC] Severe congestion at G-10 Markaz, Islamabad. Speed 4 km/h. Possible road blockage.", "lat": 33.6938, "lng": 73.0551},
-        {"content": "[TOMTOM TRAFFIC] Standstill on IJP Road near Faizabad Interchange. Estimated delay: 35 mins.", "lat": 33.6601, "lng": 73.0789},
-        {"content": "[TOMTOM TRAFFIC] Heavy congestion on Gulberg Main Boulevard, Lahore. Multi-vehicle incident suspected.", "lat": 31.5120, "lng": 74.3500},
-        {"content": "[TOMTOM TRAFFIC] Traffic jam on Shahrae Faisal, Karachi. Speed 6 km/h vs normal 60 km/h.", "lat": 24.8607, "lng": 67.0011},
+        {"content": "[TOMTOM TRAFFIC] Severe congestion at G-10 Markaz, Islamabad. Speed 4 km/h. Possible road blockage.",          "lat": 33.6938, "lng": 73.0551},
+        {"content": "[TOMTOM TRAFFIC] Standstill on IJP Road near Faizabad Interchange, Rawalpindi. Estimated delay: 35 mins.",     "lat": 33.6601, "lng": 73.0789},
+        {"content": "[TOMTOM TRAFFIC] Heavy congestion on Murree Road, Rawalpindi near Saddar. Speed 6 km/h vs normal 60 km/h.", "lat": 33.6105, "lng": 73.0783},
+        {"content": "[TOMTOM TRAFFIC] Gridlock at F-10 Markaz Islamabad. Multiple signals down, speed 3 km/h.",                   "lat": 33.7100, "lng": 73.0200},
     ]
     return random.choice(alerts)
 

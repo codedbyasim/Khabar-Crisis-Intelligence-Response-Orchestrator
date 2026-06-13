@@ -7,11 +7,13 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:record/record.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:khabar/screens/incident_tracker_screen.dart';
 import 'package:khabar/theme/app_colors.dart';
 import 'package:khabar/api_config.dart';
+import 'package:khabar/utils/location_helper.dart';
+import 'package:file_picker/file_picker.dart';
+
 
 class VoiceReportScreen extends StatefulWidget {
   const VoiceReportScreen({super.key});
@@ -63,6 +65,72 @@ class _VoiceReportScreenState extends State<VoiceReportScreen>
     }
   }
 
+  Future<void> _pickAndProcessAudioFile() async {
+    try {
+      if (_isRecording) {
+        await _audioRecorder.stop();
+      }
+      _animationController.stop();
+
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.audio,
+      );
+
+      if (result != null && result.files.single.path != null) {
+        final path = result.files.single.path!;
+        setState(() {
+          _isRecording = false;
+          _isProcessing = true;
+          _transcriptionText = "Uploading audio file to Gemini Speech for real-time transcription...\n";
+        });
+
+        var request = http.MultipartRequest('POST', Uri.parse('${ApiConfig.baseUrl}/report/voice'));
+        request.files.add(await http.MultipartFile.fromPath('audio', path));
+        request.fields['lat'] = _lat.toString();
+        request.fields['lng'] = _lng.toString();
+        if (_attachedImage != null) {
+          request.files.add(await http.MultipartFile.fromPath('image', _attachedImage!.path));
+        }
+
+        var streamedResponse = await request.send();
+        var response = await http.Response.fromStream(streamedResponse);
+
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body);
+          if (mounted) {
+            Navigator.pushReplacement(
+              context,
+              PageRouteBuilder(
+                pageBuilder: (context, animation, secondaryAnimation) =>
+                    IncidentTrackerScreen(incidentData: data),
+                transitionsBuilder: (context, animation, secondaryAnimation, child) {
+                  return FadeTransition(opacity: animation, child: child);
+                },
+              ),
+            );
+          }
+        } else {
+          throw Exception('Server error: ${response.statusCode}');
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _isRecording = false;
+            _transcriptionText = "Audio selection cancelled. You can record voice or try uploading again.\n";
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _transcriptionText += "\nFailed to process audio: $e";
+        });
+      }
+    }
+  }
+
+
   @override
   void initState() {
     super.initState();
@@ -78,25 +146,13 @@ class _VoiceReportScreenState extends State<VoiceReportScreen>
 
   Future<void> _fetchDeviceLocation() async {
     try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) return;
-
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) return;
-      }
-
-      if (permission == LocationPermission.deniedForever) return;
-
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-      );
+      final result = await LocationHelper.fetchLocation();
       if (mounted) {
         setState(() {
-          _lat = position.latitude;
-          _lng = position.longitude;
+          _lat = result.position.latitude;
+          _lng = result.position.longitude;
         });
+        debugPrint('[GPS] Voice screen location resolved to ($_lat, $_lng) via source: ${result.source}');
       }
     } catch (e) {
       debugPrint("Voice screen GPS error: $e");
@@ -375,43 +431,80 @@ class _VoiceReportScreenState extends State<VoiceReportScreen>
             ),
             const SizedBox(height: 24),
 
-            // Stop Button
+            // Stop & Upload Buttons
             Column(
               children: [
-                InkWell(
-                  onTap: (_isProcessing || !_isRecording) ? null : _stopAndProcess,
-                  borderRadius: BorderRadius.circular(40),
-                  child: Container(
-                    width: 80,
-                    height: 80,
-                    decoration: BoxDecoration(
-                      color: _isProcessing ? Colors.grey : kEmergencyRed,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: (_isProcessing ? Colors.grey : kEmergencyRed)
-                              .withValues(alpha: 0.4),
-                          blurRadius: 15,
-                          offset: const Offset(0, 5),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    // Upload audio file button
+                    InkWell(
+                      onTap: _isProcessing ? null : _pickAndProcessAudioFile,
+                      borderRadius: BorderRadius.circular(28),
+                      child: Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.1),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                          border: Border.all(color: Colors.grey.shade300),
                         ),
-                      ],
+                        child: const Icon(Icons.audio_file_outlined, color: kPrimaryTeal, size: 26),
+                      ),
                     ),
-                    child: Icon(
-                      _isProcessing ? Icons.hourglass_top : Icons.stop_rounded,
-                      color: Colors.white,
-                      size: 40,
+                    const SizedBox(width: 36),
+                    
+                    // Stop live recording button
+                    InkWell(
+                      onTap: (_isProcessing || !_isRecording) ? null : _stopAndProcess,
+                      borderRadius: BorderRadius.circular(40),
+                      child: Container(
+                        width: 80,
+                        height: 80,
+                        decoration: BoxDecoration(
+                          color: _isProcessing ? Colors.grey : kEmergencyRed,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: (_isProcessing ? Colors.grey : kEmergencyRed)
+                                  .withValues(alpha: 0.4),
+                              blurRadius: 15,
+                              offset: const Offset(0, 5),
+                            ),
+                          ],
+                        ),
+                        child: Icon(
+                          _isProcessing ? Icons.hourglass_top : Icons.stop_rounded,
+                          color: Colors.white,
+                          size: 40,
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 36),
+                    
+                    // Empty placeholder for symmetry
+                    const SizedBox(
+                      width: 56,
+                      height: 56,
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
                 Text(
                   _isProcessing
                       ? 'Processing...'
                       : _isRecording
-                          ? 'Stop & Process Signal'
+                          ? 'Stop & Process or Upload Audio File / آڈیو فائل اپ لوڈ کریں'
                           : 'Signal Sent ✓',
                   style: GoogleFonts.nunito(
-                    fontSize: 16,
+                    fontSize: 15,
                     fontWeight: FontWeight.bold,
                     color: _isProcessing ? Colors.grey : kEmergencyRed,
                   ),

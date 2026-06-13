@@ -190,9 +190,14 @@ class AlertService:
 
     def _estimate_recipients(self, location: str) -> int:
         loc = location.lower()
-        if any(c in loc for c in ["islamabad", "karachi", "lahore", "rawalpindi"]):
+        # KHABAR is active only in Islamabad & Rawalpindi
+        if any(c in loc for c in ["islamabad", "rawalpindi"]):
             return 1200
-        if any(a in loc for a in ["g-10", "g-11", "f-7", "f-8", "dha", "gulberg", "clifton"]):
+        if any(a in loc for a in [
+            "g-10", "g-11", "g-9", "f-7", "f-8", "f-6",
+            "e-11", "i-8", "i-10", "blue area", "saddar",
+            "murree road", "faizabad", "shamsabad", "bahria", "dha"
+        ]):
             return 480
         return 220
 

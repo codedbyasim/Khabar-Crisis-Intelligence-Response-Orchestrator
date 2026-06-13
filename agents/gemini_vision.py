@@ -1,32 +1,44 @@
 """
-gemini_vision.py — Gemini Vision for crisis image analysis (google-genai SDK).
-FR-02: Photo damage assessment via Gemini Vision API.
+gemini_vision.py — Crisis image analysis via AIML API (OpenAI-compatible).
+FR-02: Photo damage assessment using vision model.
+Migrated from google-genai SDK to AIML API (openai client).
 """
 import os
 import json
+import base64
 import logging
 from typing import Dict, Any
 from dotenv import load_dotenv
 
-load_dotenv()
+from openai import OpenAI
 
-from google import genai
-from google.genai import types
+load_dotenv()
 
 
 class GeminiVision:
     def __init__(self, api_key: str = None):
-        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        self.client = genai.Client(api_key=self.api_key)
-        self.model = "models/gemini-2.5-flash"
-        logging.info(f"[GeminiVision] Initialized — model: {self.model}")
+        raw_key = api_key or os.getenv("AIML_API_KEY")
+        if not raw_key:
+            raise ValueError(
+                "AIML_API_KEY is not set.\n"
+                "Please set it in agents/.env as: AIML_API_KEY=your_key_here"
+            )
+        self.api_key = raw_key.strip()
+        self.client = OpenAI(
+            base_url="https://api.aimlapi.com/v1",
+            api_key=self.api_key,
+        )
+        self.model = "google/gemini-2.5-flash"
+        logging.info(f"[GeminiVision] Initialized — model: {self.model} (AIML API)")
 
     def analyze_crisis_image(
         self, image_bytes: bytes, mime_type: str = "image/jpeg"
     ) -> Dict[str, Any]:
-        """Analyze a crisis scene image using Gemini Vision."""
+        """Analyze a crisis scene image using AIML Vision API."""
         try:
-            image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+            # Encode image to base64 data URL (OpenAI vision format)
+            b64_image = base64.b64encode(image_bytes).decode("utf-8")
+            data_url = f"data:{mime_type};base64,{b64_image}"
 
             prompt = """You are a crisis detection AI for KHABAR — Pakistan's emergency response system.
 Analyze this image and identify any crisis or emergency situation.
@@ -48,15 +60,26 @@ Return ONLY valid JSON:
 
 Priority: P1=life-threatening, P2=serious, P3=moderate, P4=low, P5=info."""
 
-            response = self.client.models.generate_content(
+            response = self.client.chat.completions.create(
                 model=self.model,
-                contents=[prompt, image_part],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.1,
-                ),
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": data_url},
+                            },
+                        ],
+                    }
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.1,
             )
-            result = json.loads(response.text)
+
+            content = response.choices[0].message.content
+            result = json.loads(content)
             logging.info(
                 f"[GeminiVision] ✅ {result.get('crisis_type')} | "
                 f"Priority: {result.get('priority')} | "
@@ -73,7 +96,7 @@ Priority: P1=life-threatening, P2=serious, P3=moderate, P4=low, P5=info."""
             "crisis_type": "unknown", "severity": "HIGH", "priority": "P2",
             "confidence": 0.3, "detected_elements": ["analysis_unavailable"],
             "affected_count_estimate": 0,
-            "description": f"Gemini Vision failed: {error}. Manual review required.",
+            "description": f"Vision analysis failed: {error}. Manual review required.",
             "urdu_description": "تصویر کا تجزیہ ناکام ہوگیا۔",
             "location_clues": [], "immediate_actions": ["manual_review_required"],
             "gemini_reasoning": f"System error: {error}",

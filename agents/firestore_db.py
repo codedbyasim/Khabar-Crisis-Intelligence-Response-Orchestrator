@@ -7,6 +7,7 @@ import logging
 import json
 import os
 import psycopg2
+import time
 from dotenv import load_dotenv
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
@@ -33,11 +34,34 @@ _IN_MEMORY_RESOURCES = {
 }
 
 
+# Offline database caching state to avoid slow timeouts when offline
+_db_is_offline = False
+_last_db_check_time = 0.0
+DB_COOLDOWN_SECONDS = 30.0
+
+
 # Helper to connect to Supabase
 def get_db_connection():
+    global _db_is_offline, _last_db_check_time
     if not DB_URI:
         raise ValueError("DATABASE_URL is not set in environment or .env file")
-    return psycopg2.connect(DB_URI)
+
+    current_time = time.time()
+    if _db_is_offline and (current_time - _last_db_check_time < DB_COOLDOWN_SECONDS):
+        raise ConnectionAbortedError("Database is offline (cooldown active).")
+
+    try:
+        conn = psycopg2.connect(DB_URI)
+        if _db_is_offline:
+            logging.info("[Supabase DB] ✅ Database connection restored!")
+            _db_is_offline = False
+        return conn
+    except Exception as e:
+        if not _db_is_offline:
+            logging.warning(f"[Supabase DB] 🚨 Database connection failed. Switching to local in-memory fallback. Error: {e}")
+            _db_is_offline = True
+        _last_db_check_time = current_time
+        raise e
 
 
 class KhabarFirestore:
@@ -90,22 +114,24 @@ class KhabarFirestore:
             conn = get_db_connection()
             cur = conn.cursor()
             cur.execute("""
-            INSERT INTO resources (resource_id, name, type, quantity, status)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO resources (resource_id, name, type, quantity, status, location)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (resource_id) DO UPDATE
-            SET name = EXCLUDED.name, type = EXCLUDED.type, quantity = EXCLUDED.quantity, status = EXCLUDED.status;
-            """, (resource_id, data.get("name") or data.get("resource_id"), data.get("type") or data.get("resource_type"), data.get("quantity") or data.get("quantity_available") or 1, data.get("status")))
+            SET name = EXCLUDED.name, type = EXCLUDED.type, quantity = EXCLUDED.quantity, status = EXCLUDED.status, location = EXCLUDED.location;
+            """, (resource_id, data.get("name") or data.get("resource_id"), data.get("type") or data.get("resource_type"), data.get("quantity") or data.get("quantity_available") or 1, data.get("status"), json.dumps(data.get("location"))))
             conn.commit()
             cur.close()
             conn.close()
         except Exception as e:
-            logging.warning(f"[Supabase DB] Postgres down/unreachable. Saving resource {resource_id} in local memory. Error: {e}")
+            if not isinstance(e, ConnectionAbortedError):
+                logging.warning(f"[Supabase DB] Postgres down/unreachable. Saving resource {resource_id} in local memory. Error: {e}")
             _IN_MEMORY_RESOURCES[resource_id] = {
                 "resource_id": resource_id,
                 "name": data.get("name") or resource_id,
                 "resource_type": data.get("type") or data.get("resource_type") or "other",
                 "quantity_available": data.get("quantity") or data.get("quantity_available") or 1,
-                "status": data.get("status") or "standby"
+                "status": data.get("status") or "standby",
+                "location": data.get("location")
             }
 
     # ── Real Database Convenience helpers ──
@@ -181,7 +207,8 @@ class KhabarFirestore:
             conn.close()
             logging.info(f"[Supabase DB] ✅ Incident {incident_id} saved to Postgres successfully!")
         except Exception as e:
-            logging.warning(f"[Supabase DB] Postgres down/unreachable. Incident {incident_id} saved to local memory. Error: {e}")
+            if not isinstance(e, ConnectionAbortedError):
+                logging.warning(f"[Supabase DB] Postgres down/unreachable. Incident {incident_id} saved to local memory. Error: {e}")
 
     def get_incident(self, incident_id: str) -> Optional[dict]:
         try:
@@ -219,7 +246,8 @@ class KhabarFirestore:
                     "public_alerts_sent": row[12]
                 }
         except Exception as e:
-            logging.warning(f"[Supabase DB] Postgres offline/unreachable. Pulling incident {incident_id} from local memory fallback. Error: {e}")
+            if not isinstance(e, ConnectionAbortedError):
+                logging.warning(f"[Supabase DB] Postgres offline/unreachable. Pulling incident {incident_id} from local memory fallback. Error: {e}")
         
         # Local memory fallback
         record = _IN_MEMORY_INCIDENTS.get(incident_id)
@@ -265,7 +293,8 @@ class KhabarFirestore:
                 })
             return incidents
         except Exception as e:
-            logging.warning(f"[Supabase DB] Postgres offline/unreachable. Pulling all incidents from local memory fallback. Error: {e}")
+            if not isinstance(e, ConnectionAbortedError):
+                logging.warning(f"[Supabase DB] Postgres offline/unreachable. Pulling all incidents from local memory fallback. Error: {e}")
         
         # Local memory list fallback sorted by timestamp
         fallback_list = []
@@ -278,31 +307,63 @@ class KhabarFirestore:
         try:
             conn = get_db_connection()
             cur = conn.cursor()
-            cur.execute("SELECT resource_id, name, type, quantity, status, location FROM resources;")
-            rows = cur.fetchall()
-            cur.close()
-            conn.close()
             
-            for row in rows:
-                loc_data = row[5]
-                if isinstance(loc_data, str):
-                    try:
-                        loc_data = json.loads(loc_data)
-                    except:
-                        loc_data = None
-                        
-                resources.append({
-                    "id": row[0],
-                    "resource_id": row[0],
-                    "name": row[1],
-                    "resource_type": row[2],
-                    "quantity_available": row[3],
-                    "status": row[4],
-                    "location": loc_data
-                })
+            # Check columns to see if assigned_incident exists
+            cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'resources';")
+            columns = [row[0] for row in cur.fetchall()]
+            
+            if 'assigned_incident' in columns:
+                cur.execute("SELECT resource_id, name, type, quantity, status, location, assigned_incident FROM resources;")
+                rows = cur.fetchall()
+                cur.close()
+                conn.close()
+                
+                for row in rows:
+                    loc_data = row[5]
+                    if isinstance(loc_data, str):
+                        try:
+                            loc_data = json.loads(loc_data)
+                        except:
+                            loc_data = None
+                            
+                    resources.append({
+                        "id": row[0],
+                        "resource_id": row[0],
+                        "name": row[1],
+                        "resource_type": row[2],
+                        "quantity_available": row[3],
+                        "status": row[4],
+                        "location": loc_data,
+                        "assigned_incident": row[6]
+                    })
+            else:
+                cur.execute("SELECT resource_id, name, type, quantity, status, location FROM resources;")
+                rows = cur.fetchall()
+                cur.close()
+                conn.close()
+                
+                for row in rows:
+                    loc_data = row[5]
+                    if isinstance(loc_data, str):
+                        try:
+                            loc_data = json.loads(loc_data)
+                        except:
+                            loc_data = None
+                            
+                    resources.append({
+                        "id": row[0],
+                        "resource_id": row[0],
+                        "name": row[1],
+                        "resource_type": row[2],
+                        "quantity_available": row[3],
+                        "status": row[4],
+                        "location": loc_data,
+                        "assigned_incident": None
+                    })
             return resources
         except Exception as e:
-            logging.warning(f"[Supabase DB] Postgres offline/unreachable. Pulling resources from local memory fallback. Error: {e}")
+            if not isinstance(e, ConnectionAbortedError):
+                logging.warning(f"[Supabase DB] Postgres offline/unreachable. Pulling resources from local memory fallback. Error: {e}")
         
         # Local memory list fallback
         return list(_IN_MEMORY_RESOURCES.values())
@@ -310,21 +371,56 @@ class KhabarFirestore:
     def update_resource_status(self, resource_id: str, status: str, incident_id: str = None):
         if resource_id in _IN_MEMORY_RESOURCES:
             _IN_MEMORY_RESOURCES[resource_id]["status"] = status
+            _IN_MEMORY_RESOURCES[resource_id]["assigned_incident"] = incident_id
 
         try:
             conn = get_db_connection()
             cur = conn.cursor()
+            
+            # Self-healing column check: check if assigned_incident column exists in resources table
+            cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'resources';")
+            columns = [row[0] for row in cur.fetchall()]
+            if 'assigned_incident' not in columns:
+                logging.info("[Supabase DB] Adding assigned_incident column to resources table...")
+                cur.execute("ALTER TABLE resources ADD COLUMN assigned_incident VARCHAR(255);")
+                conn.commit()
+                
             cur.execute("""
             UPDATE resources
-            SET status = %s
+            SET status = %s, assigned_incident = %s
             WHERE resource_id = %s;
-            """, (status, resource_id))
+            """, (status, incident_id, resource_id))
             conn.commit()
             cur.close()
             conn.close()
-            logging.info(f"[Supabase DB] Updated resource {resource_id} status to {status} in Postgres")
+            logging.info(f"[Supabase DB] Updated resource {resource_id} status to {status} (Assigned to {incident_id}) in Postgres")
         except Exception as e:
-            logging.warning(f"[Supabase DB] Postgres offline/unreachable. Updated resource {resource_id} to {status} in local memory. Error: {e}")
+            if not isinstance(e, ConnectionAbortedError):
+                logging.warning(f"[Supabase DB] Postgres offline/unreachable. Updated resource {resource_id} to {status} in local memory. Error: {e}")
+
+    def clear_all_data(self):
+        """
+        Clear all incidents from Postgres and local memory, and reset resources status to available.
+        """
+        global _IN_MEMORY_INCIDENTS
+        _IN_MEMORY_INCIDENTS.clear()
+
+        for r_id in _IN_MEMORY_RESOURCES:
+            _IN_MEMORY_RESOURCES[r_id]["status"] = "available"
+
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("TRUNCATE TABLE incidents CASCADE;")
+            cur.execute("UPDATE resources SET status = 'available';")
+            conn.commit()
+            cur.close()
+            conn.close()
+            logging.info("[Supabase DB] Truncated incidents and reset resources in Postgres successfully.")
+        except Exception as e:
+            if not isinstance(e, ConnectionAbortedError):
+                logging.warning(f"[Supabase DB] Failed to clear DB, cleared memory. Error: {e}")
 
 # Global singleton — import this everywhere
 db = KhabarFirestore()
+

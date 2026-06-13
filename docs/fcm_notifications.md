@@ -1,36 +1,105 @@
-# 🔔 Firebase Cloud Messaging (FCM) Integration
+# 🔔 Firebase Cloud Messaging (FCM) — Push Notifications
 
-KHABAR integrates Firebase Cloud Messaging (FCM) to support real-time crisis warning signals, forcing localized warning popups directly onto the user's mobile screen.
-
----
-
-## 📲 1. App Navigation State Routing
-During active emergency events, notifications must trigger dynamic app reactions immediately.
-*   **Global Navigator Key:** 
-    Inside `lib/main.dart`, we define a `GlobalKey<NavigatorState>`:
-    ```dart
-    final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
-    ```
-*   **Purpose:** Allows background service handlers and FCM listeners to perform context-free screen routing or display modal dialog overlays even when the user is deep inside another screen.
+KHABAR sends **real-time bilingual push notifications** to all citizen app users using Firebase Cloud Messaging v1 HTTP API via the Firebase Admin SDK.
 
 ---
 
-## ⚡ 2. Foreground vs. Background Handlers
-The Flutter application listens for real-time messages on the `khabar_alerts` notification channel.
+## How It Works
 
-### 🟢 Foreground Handling:
-1. When a user has the app open and the backend Execution Agent invokes `BroadcastAlert`, an FCM payload is sent.
-2. The application listens using `FirebaseMessaging.onMessage.listen(...)`.
-3. If the message payload contains `"priority": "CRITICAL"`, it triggers a foreground modal dialog:
-   - Displays a red glassmorphic backdrop.
-   - Shows the warning in Roman Urdu and English.
-   - Provides a direct action button: **"Go to Incident Map"** which dynamically routes the user to `MapScreen` using the global `navigatorKey`.
+```
+Execution Agent triggers broadcast_alert tool
+            ↓
+AlertService.broadcast_crisis_alert()
+            ↓
+Generates Urdu + English message from templates
+            ↓
+FCM v1 API via firebase-admin SDK
+            ↓
+All users subscribed to topic: khabar_public_alerts
+            ↓
+Flutter app receives notification (foreground + background)
+```
 
-### 🔴 Background Handling:
-1. If the app is closed, the system listens using a top-level function annotated with `@pragma('vm:entry-point')`:
-   ```dart
-   Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-       // Processes and caches incoming signals locally
-   }
+---
+
+## Setup
+
+### Step 1 — Get Service Account Key
+1. Go to [Firebase Console](https://console.firebase.google.com)
+2. Select project `khabar-46771`
+3. **Project Settings → Service Accounts → Generate new private key**
+4. Download JSON and place at:
    ```
-2. Triggers a system tray notification with high-priority ringtone channels to ensure the citizen is warned immediately.
+   h:\khabar\agents\khabar-46771-firebase-adminsdk-fbsvc-e3117a9fbb.json
+   ```
+
+### Step 2 — Subscribe Flutter Users to Topic
+Flutter app subscribes on startup (in `main.dart`):
+```dart
+await FirebaseMessaging.instance.subscribeToTopic('khabar_public_alerts');
+```
+
+### Step 3 — Verify FCM Works
+With backend running, submit a test incident and check logs for:
+```
+[FCM] ✅ REAL Push Notification sent! Message ID: projects/khabar-46771/messages/...
+```
+
+---
+
+## Alert Templates
+
+`AlertService` has built-in bilingual templates for 9 crisis types:
+
+| Crisis Type | Urdu Template | English Template |
+|---|---|---|
+| `flood` | ⚠️ سیلاب کا خطرہ: {location}... | FLOOD ALERT: Flooding at {location}... |
+| `urban flood` | ⚠️ شہری سیلاب: {location}... | URBAN FLOOD: Water logging at {location}... |
+| `fire` | 🔥 آگ کی اطلاع: {location}... | FIRE ALERT: Fire at {location}... |
+| `road accident` | 🚗 ٹریفک حادثہ: {location}... | ACCIDENT: Accident at {location}... |
+| `building collapse` | 🏚️ عمارت منہدم: {location}... | COLLAPSE ALERT: Building collapse... |
+| `heatwave` | 🌡️ ہیٹ ویو وارننگ: {location}... | HEATWAVE WARNING: Extreme heat... |
+| `medical` | 🏥 طبی ہنگامی: {location}... | MEDICAL EMERGENCY: {location}... |
+| `road blockage` | 🚧 سڑک بند: {location}... | ROAD BLOCKED: {location}... |
+| `default` | ⚠️ ہنگامی اطلاع: {location}... | EMERGENCY ALERT: {severity} incident... |
+
+---
+
+## Alert Payload Structure
+
+```python
+message = messaging.Message(
+    notification = Notification(title="🚨 KHABAR — ہنگامی اطلاع", body=urdu_message),
+    data = {"incident_id": "SIG-...", "location": "Rawalpindi", "language": "ur"},
+    topic = "khabar_public_alerts",
+    android = AndroidConfig(
+        priority="high",
+        notification=AndroidNotification(
+            channel_id="khabar_emergency",
+            sound="emergency_alert"
+        )
+    ),
+    apns = APNSConfig(headers={"apns-priority": "10"})
+)
+```
+
+---
+
+## Fallback (No Service Account File)
+
+If `firebase_service_account.json` is missing:
+- System logs `[FCM] SIMULATED Alert` instead of failing
+- Alert record is stored with `status: "SIMULATED_DELIVERY"`
+- Rest of the pipeline continues normally — **no crash**
+
+---
+
+## Recipient Estimation
+
+`AlertService._estimate_recipients()` estimates the audience size by location:
+
+| Location Type | Estimated Recipients |
+|---|---|
+| Islamabad or Rawalpindi (city-wide) | ~1,200 |
+| Named sectors (G-10, F-7, Saddar, Murree Road, Faizabad, Bahria, DHA) | ~480 |
+| Other areas (not matched above) | ~220 |
