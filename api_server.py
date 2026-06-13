@@ -1310,52 +1310,28 @@ RULES:
     response_text = ""
     command_executed = None
     
-    # Try online AIML API with retries to prevent premature local fallback on network delay
-    aiml_success = False
-    for attempt in range(3):
-        try:
-            client = orchestrator.detection_agent.llm_client.client
-            model = orchestrator.detection_agent.llm_client.model
-            
-            response = await asyncio.wait_for(
-                client.chat.completions.create(
-                    model=model,
-                    messages=messages,
-                    temperature=0.3,
-                ),
-                timeout=25.0
-            )
-            response_text = response.choices[0].message.content
-            aiml_success = True
-            logging.info(f"[Admin Chat] ✅ Successful response from AIML API (Attempt {attempt+1})")
-            break
-        except Exception as e:
-            logging.warning(f"[Admin Chat] Attempt {attempt+1} failed/timed out: {e}")
-            if attempt < 2:
-                await asyncio.sleep(1)
-
-    if not aiml_success:
-        logging.warning("Online admin chat failed. Falling back to local offline model...")
-        import local_model
-        if local_model.is_available():
-            full_prompt = (
-                f"<|im_start|>system\n{system_prompt}\n<|im_end|>\n"
-                f"<|im_start|>user\n{request.message}<|im_end|>\n"
-                f"<|im_start|>assistant\n"
-            )
-            try:
-                response = local_model._llm(
-                    full_prompt,
-                    max_tokens=512,
-                    temperature=0.2,
-                    stop=["<|im_end|>", "<|im_start|>"],
-                )
-                response_text = response["choices"][0]["text"].strip()
-            except Exception as le:
-                logging.error(f"Local admin chat error: {le}")
-                response_text = "Error: Local model failed to respond."
-        else:
-            response_text = "I am unable to connect to the online AI service, and the local fallback model is not available."
+    # Try online AIML API only (no local fallback, fast response)
+    try:
+        client = orchestrator.detection_agent.llm_client.client
+        model = orchestrator.detection_agent.llm_client.model
+        
+        response = await asyncio.wait_for(
+            client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=0.3,
+            ),
+            timeout=10.0
+        )
+        response_text = response.choices[0].message.content
+        logging.info("[Admin Chat] ✅ Successful response from AIML API")
+    except Exception as e:
+        logging.error(f"[Admin Chat] AIML API call failed or timed out: {e}")
+        return {
+            "success": False,
+            "error": "AIML API is temporarily slow or offline. Please try again.",
+            "response": None,
+        }
 
     # Parse command tag
     match = re.search(r'\[EXECUTE:\s*(\w+)(.*?)\]', response_text)
