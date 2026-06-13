@@ -45,13 +45,15 @@ export default function Chatbot({ apiBase, onActionExecuted }) {
     setInputValue('');
     setIsLoading(true);
 
-    // Prepare history for API
-    const history = messages
+    // AbortController with 70 second timeout — allows AI enough time to fully generate response
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 70000);
+
+    // Trim history to last 6 messages to keep payload small
+    const historyToSend = messages
       .filter(msg => msg.role !== 'system')
-      .map(msg => ({
-        role: msg.role,
-        content: msg.content
-      }));
+      .slice(-6)
+      .map(msg => ({ role: msg.role, content: msg.content }));
 
     try {
       const response = await fetch(`${apiBase}/admin/chat`, {
@@ -59,13 +61,15 @@ export default function Chatbot({ apiBase, onActionExecuted }) {
         headers: {
           'Content-Type': 'application/json'
         },
+        signal: controller.signal,
         body: JSON.stringify({
           message: userText,
-          history: history,
+          history: historyToSend,
           language: 'English'
         })
       });
 
+      clearTimeout(timeoutId);
       const data = await response.json();
 
       if (data.success) {
@@ -87,15 +91,19 @@ export default function Chatbot({ apiBase, onActionExecuted }) {
         setMessages(prev => [...prev, {
           id: Date.now() + 1,
           role: 'assistant',
-          content: 'Sorry, I encountered an issue: ' + (data.error || 'Unknown error')
+          content: '⚠️ ' + (data.error || 'Unknown error. Please try again.')
         }]);
       }
     } catch (err) {
+      clearTimeout(timeoutId);
       console.error('Chat error:', err);
+      const isTimeout = err.name === 'AbortError';
       setMessages(prev => [...prev, {
         id: Date.now() + 1,
         role: 'assistant',
-        content: 'Error: Could not establish connection to the admin chat server.'
+        content: isTimeout
+          ? '⏱️ The AI took too long to respond (>70s). Please try a shorter query or try again.'
+          : '❌ Error: Could not connect to the admin chat server. Make sure the backend is running.'
       }]);
     } finally {
       setIsLoading(false);
