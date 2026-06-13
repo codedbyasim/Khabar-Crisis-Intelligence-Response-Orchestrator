@@ -1311,22 +1311,31 @@ RULES:
     command_executed = None
     
     # Try online AIML API only (no local fallback, fast response)
-    try:
-        client = orchestrator.detection_agent.llm_client.client
-        model = orchestrator.detection_agent.llm_client.model
-        
-        response = await asyncio.wait_for(
-            client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=0.3,
-            ),
-            timeout=10.0
-        )
-        response_text = response.choices[0].message.content
-        logging.info("[Admin Chat] ✅ Successful response from AIML API")
-    except Exception as e:
-        logging.error(f"[Admin Chat] AIML API call failed or timed out: {e}")
+    aiml_success = False
+    for attempt in range(2):
+        try:
+            client = orchestrator.detection_agent.llm_client.client
+            model = orchestrator.detection_agent.llm_client.model
+            
+            response = await asyncio.wait_for(
+                client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=0.3,
+                ),
+                timeout=15.0
+            )
+            response_text = response.choices[0].message.content
+            aiml_success = True
+            logging.info(f"[Admin Chat] ✅ Successful response from AIML API (Attempt {attempt+1})")
+            break
+        except Exception as e:
+            logging.warning(f"[Admin Chat] Attempt {attempt+1} failed or timed out: {e}")
+            if attempt < 1:
+                await asyncio.sleep(0.5)
+
+    if not aiml_success:
+        logging.error("[Admin Chat] All AIML API attempts failed or timed out.")
         return {
             "success": False,
             "error": "AIML API is temporarily slow or offline. Please try again.",
