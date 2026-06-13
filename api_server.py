@@ -1200,25 +1200,15 @@ async def admin_chat(request: AdminChatRequest):
     
     # In-memory incidents (currently processing)
     for inc_id, memory in orchestrator.memory_block.active_incidents.items():
-        # Only show active/pending incidents to the coordinator chatbot to keep prompt small
-        status = memory.system_state.status
-        if status.upper() in ("RESOLVED", "CLOSED", "REJECTED"):
-            continue
-            
         loc_str = "Unknown"
         if memory.detection_output:
             loc = memory.detection_output.detected_location
-            lat = memory.raw_signal.metadata.get("lat") if memory.raw_signal and memory.raw_signal.metadata else None
-            lng = memory.raw_signal.metadata.get("lng") if memory.raw_signal and memory.raw_signal.metadata else None
-            lat_lng_str = f" (lat: {lat}, lng: {lng})" if lat is not None and lng is not None else ""
-            loc_str = f"{loc.area or ''} {loc.city or ''}{lat_lng_str}".strip()
-            if not loc_str:
-                loc_str = "Unknown"
+            loc_str = f"{loc.area or ''} {loc.city or ''} (lat: {memory.detection_output.detected_location.latitude}, lng: {memory.detection_output.detected_location.longitude})"
         active_incidents.append({
             "incident_id": inc_id,
             "type": memory.detection_output.incident_type.value if memory.detection_output else "Unknown",
             "priority": memory.detection_output.priority.value if memory.detection_output else "P3",
-            "status": status,
+            "status": memory.system_state.status,
             "location": loc_str,
             "active_units": memory.system_state.active_units,
             "closed_roads": memory.system_state.closed_roads,
@@ -1233,17 +1223,13 @@ async def admin_chat(request: AdminChatRequest):
             if fi:
                 inc_id = fi.get("incident_id")
                 if inc_id and inc_id not in memory_ids:
-                    status = fi.get("status") or "ACTIVE"
-                    # Only show active/pending incidents to the coordinator chatbot
-                    if status.upper() in ("RESOLVED", "CLOSED", "REJECTED"):
-                        continue
                     loc = fi.get("location") or {}
                     loc_str = loc.get("address") or loc.get("location_name") or f"lat: {fi.get('lat')}, lng: {fi.get('lng')}"
                     active_incidents.append({
                         "incident_id": inc_id,
                         "type": fi.get("incident_type") or "Emergency",
                         "priority": fi.get("priority") or "P3",
-                        "status": status,
+                        "status": fi.get("status") or "ACTIVE",
                         "location": loc_str,
                         "active_units": fi.get("active_units") or 0,
                         "closed_roads": fi.get("closed_roads") or [],
@@ -1252,8 +1238,7 @@ async def admin_chat(request: AdminChatRequest):
     except Exception as e:
         logging.error(f"Error fetching incidents for admin chat: {e}")
 
-    # Format incidents string (Limit to last 15 active incidents to keep prompt size small)
-    active_incidents = active_incidents[-15:]
+    # Format incidents string
     incidents_list_str = ""
     for inc in active_incidents:
         incidents_list_str += f"- ID: {inc['incident_id']} | Type: {inc['type']} | Priority: {inc['priority']} | Status: {inc['status']} | Location: {inc['location']} | Units Assigned: {inc['active_units']} | Closed Roads: {inc['closed_roads']}\n"
@@ -1266,9 +1251,8 @@ async def admin_chat(request: AdminChatRequest):
     except Exception:
         resources = []
         
-    # Limit to active resources or just limit overall list length to keep prompt small
     resources_list_str = ""
-    for res in resources[:20]:
+    for res in resources:
         resources_list_str += f"- ID: {res.get('resource_id')} | Name: {res.get('name')} | Type: {res.get('resource_type') or res.get('type')} | Status: {res.get('status')} | Quantity: {res.get('quantity_available', res.get('quantity', 1))}\n"
     if not resources_list_str:
         resources_list_str = "No resources cataloged in database inventory."
@@ -1312,10 +1296,8 @@ RULES:
 4. Keep a highly professional, prompt, and direct tone. Match the language the user speaks (English, Urdu, or Roman Urdu).
 """
 
-    # Limit chat history to last 6 messages (3 conversation turns) to drastically reduce prefill prompt size
-    history_to_send = request.history[-6:]
     messages = [{"role": "system", "content": system_prompt}]
-    for h in history_to_send:
+    for h in request.history:
         role = "assistant" if h.get("role") in ("assistant", "model") else "user"
         messages.append({"role": role, "content": h.get("content", "")})
     messages.append({"role": "user", "content": request.message})
@@ -1323,36 +1305,52 @@ RULES:
     response_text = ""
     command_executed = None
     
-    # Try online AIML API only (no local fallback, fast response)
+    # Try online AIML API with retries to prevent premature local fallback on network delay
     aiml_success = False
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             client = orchestrator.detection_agent.llm_client.client
             model = orchestrator.detection_agent.llm_client.model
             
-            # Using client's timeout parameter directly (more robust than asyncio.wait_for)
-            response = await client.chat.completions.create(
-                model=model,
-                messages=messages,
-                temperature=0.3,
-                timeout=60.0,
+            response = await asyncio.wait_for(
+                client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    temperature=0.3,
+                ),
+                timeout=25.0
             )
             response_text = response.choices[0].message.content
             aiml_success = True
             logging.info(f"[Admin Chat] ✅ Successful response from AIML API (Attempt {attempt+1})")
             break
         except Exception as e:
-            logging.warning(f"[Admin Chat] Attempt {attempt+1} failed or timed out: {e}")
-            if attempt < 1:
-                await asyncio.sleep(0.5)
+            logging.warning(f"[Admin Chat] Attempt {attempt+1} failed/timed out: {e}")
+            if attempt < 2:
+                await asyncio.sleep(1)
 
     if not aiml_success:
-        logging.error("[Admin Chat] All AIML API attempts failed or timed out.")
-        return {
-            "success": False,
-            "error": "AIML API is temporarily slow or offline. Please try again.",
-            "response": None,
-        }
+        logging.warning("Online admin chat failed. Falling back to local offline model...")
+        import local_model
+        if local_model.is_available():
+            full_prompt = (
+                f"<|im_start|>system\n{system_prompt}\n<|im_end|>\n"
+                f"<|im_start|>user\n{request.message}<|im_end|>\n"
+                f"<|im_start|>assistant\n"
+            )
+            try:
+                response = local_model._llm(
+                    full_prompt,
+                    max_tokens=512,
+                    temperature=0.2,
+                    stop=["<|im_end|>", "<|im_start|>"],
+                )
+                response_text = response["choices"][0]["text"].strip()
+            except Exception as le:
+                logging.error(f"Local admin chat error: {le}")
+                response_text = "Error: Local model failed to respond."
+        else:
+            response_text = "I am unable to connect to the online AI service, and the local fallback model is not available."
 
     # Parse command tag
     match = re.search(r'\[EXECUTE:\s*(\w+)(.*?)\]', response_text)
