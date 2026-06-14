@@ -950,7 +950,7 @@ RULES:
 4. If they describe a real emergency, advise them to go to the 'Report' tab immediately to submit a formal incident so the 4-agent dispatch pipeline can trigger WASA/Rescue 1122.
 5. Keep guidelines actionable (Do's and Don'ts).
 6. When they ask about help arrival, WASA, or Rescue teams, utilize the calculated travel time ({estimated_time}) and distance ({distance_str}) from '{nearest_resource}' and inform them.
-7. Ensure response is cleanly formatted using bullet points where appropriate and avoid raw markdown symbols that look ugly.
+7. TEXT FORMATTING RULES: Avoid raw markdown symbols that look ugly (like '**', '__', or '|'). Instead, use plain, clean text. When listing items (e.g., resources or safety tips), ALWAYS start each item on a new line using a newline '\n' character and prefix it with a simple list bullet (e.g. '🔹' or '-'). Never write list items on a single contiguous block of text.
 8. When users ask about what incidents occurred or where they occurred (e.g., 'Kahan kahan incident huva hai?', 'Any active news or emergencies?'), look at the 'SYSTEM CONTEXT — ACTIVE REPORTED INCIDENTS IN DATABASE' above and describe exactly where they happened, what type they are, and their current priority/status. Be specific and helpful.
 9. When users ask about the weather, temperature, rain, or storm conditions, check the 'LIVE WEATHER SENSOR CONTEXT (Open-Meteo)' above and describe the current conditions for their location in detail, offering safety tips if conditions are severe.
 
@@ -1311,6 +1311,7 @@ RULES:
 2. Include the EXACT [EXECUTE: ...] tag at the start of your message, followed by an explanation of what action you are taking.
 3. For situation summaries, analyze active cases, priorities, hotspots, and give recommendations.
 4. Keep a highly professional, prompt, and direct tone. Match the language the user speaks (English, Urdu, or Roman Urdu).
+5. TEXT FORMATTING RULES: Do NOT use raw markdown symbols like '**', '__', or '|'. For any listings or lists of items, ALWAYS start each item on a new line (using the newline '\n' character) and prefix each item with a clear list bullet (e.g. '🔹' or '-'). Ensure sections are separated by blank lines for high readability on UI chat logs.
 """
 
     # Limit chat history to last 6 messages (3 conversation turns) to drastically reduce prefill prompt size
@@ -1329,7 +1330,7 @@ RULES:
     retry_delays = [1.0, 3.0, 5.0]  # Exponential backoff in seconds
     for attempt in range(3):
         try:
-            api_key = orchestrator.detection_agent.llm_client.api_key
+            api_key = os.getenv("ADMIN_CHAT_AIML_KEY") or orchestrator.detection_agent.llm_client.api_key
             model = orchestrator.detection_agent.llm_client.model
 
             payload = {

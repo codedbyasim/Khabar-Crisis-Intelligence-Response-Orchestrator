@@ -27,6 +27,7 @@ class GeminiVision:
         self.client = OpenAI(
             base_url="https://api.aimlapi.com/v1",
             api_key=self.api_key,
+            max_retries=0,          # Disable SDK auto-retries — we handle fallbacks manually
         )
         self.model = "google/gemini-2.5-flash"
         logging.info(f"[GeminiVision] Initialized — model: {self.model} (AIML API)")

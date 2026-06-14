@@ -31,6 +31,7 @@ class GeminiSpeech:
         self.client = OpenAI(
             base_url="https://api.aimlapi.com/v1",
             api_key=self.api_key,
+            max_retries=0,          # Disable SDK auto-retries — we handle fallbacks manually
         )
         self.transcription_model = "whisper-1"
         self.analysis_model = "google/gemini-2.5-flash"

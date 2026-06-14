@@ -52,7 +52,7 @@ export default function App() {
   const [resources, setResources] = useState([]);
   const [resourceSummary, setResourceSummary] = useState(null);
   const [selectedId, setSelectedId] = useState(null);
-  const [countdown, setCountdown] = useState(4);
+  const [countdown, setCountdown] = useState(15);
   const [injectingId, setInjectingId] = useState(null);
 
   // Manual action state
@@ -88,10 +88,10 @@ export default function App() {
     fetchData();
     pollIntervalRef.current = setInterval(() => {
       fetchData();
-      setCountdown(4);
-    }, 4000);
+      setCountdown(15);
+    }, 15000);
     countdownIntervalRef.current = setInterval(() => {
-      setCountdown(prev => (prev > 1 ? prev - 1 : 4));
+      setCountdown(prev => (prev > 1 ? prev - 1 : 15));
     }, 1000);
     return () => {
       clearInterval(pollIntervalRef.current);

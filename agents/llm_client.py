@@ -182,7 +182,8 @@ class LLMClient:
         self.api_key = raw_key.strip()
         self.client = AsyncOpenAI(
             base_url="https://api.aimlapi.com/v1",
-            api_key=self.api_key
+            api_key=self.api_key,
+            max_retries=0,          # Disable SDK built-in retries — we manage retries ourselves
         )
         self.model = model or "google/gemini-2.5-flash"
         logging.info(f"[LLMClient] Initialized — model: {self.model} (AIML API AsyncOpenAI client)")

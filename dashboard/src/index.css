@@ -1440,6 +1440,7 @@ body {
   font-size: 13px;
   line-height: 1.5;
   animation: fadeInUp 0.25s ease both;
+  white-space: pre-wrap;
 }
 
 .chatbot-msg-user {
