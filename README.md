@@ -1,5 +1,5 @@
 # 🚨 KHABAR (خبر) — Crisis Intelligence & Response Orchestrator (CIRO)
-###AIML API (google/gemini-2.5-flash) | FastAPI + Flutter + React Dashboard**
+### AIML API (google/gemini-2.5-flash) | FastAPI + Flutter + React Dashboard**
 
 ---
 
