@@ -1,5 +1,5 @@
 # 🚨 KHABAR (خبر) — Crisis Intelligence & Response Orchestrator (CIRO)
-### **AISeekho Antigravity Hackathon 2026 (Challenge 3) | AIML API (google/gemini-2.5-flash) | FastAPI + Flutter + React Dashboard**
+###AIML API (google/gemini-2.5-flash) | FastAPI + Flutter + React Dashboard**
 
 ---
 
