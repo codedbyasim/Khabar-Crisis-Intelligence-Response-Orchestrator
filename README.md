@@ -6,7 +6,7 @@
 ## 📸 1. Visual System Diagrams
 
 ### **1.1. Overall System Architecture**
-![Overall System Architecture](images/Overall%20System2.png)
+![Overall System Architecture](images/Overall%20System.png)
 
 ### **1.2. Multi-Agent Antigravity Orchestration Pipeline**
 ![Multi-Agent Pipeline](images/Agent.png)
