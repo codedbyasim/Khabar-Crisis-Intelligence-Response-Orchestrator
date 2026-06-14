@@ -8,10 +8,7 @@
 ### **1.1. Overall System Architecture**
 ![Overall System Architecture](images/Overall%20System.png)
 
-### **1.2. Multi-Agent Antigravity Orchestration Pipeline**
-![Multi-Agent Pipeline](images/Agent.png)
-
-### **1.3. Flutter Mobile Client State Flow**
+### **1.2. Flutter Mobile Client State Flow**
 ![Flutter Mobile Client](images/Flutter.png)
 
 ---
