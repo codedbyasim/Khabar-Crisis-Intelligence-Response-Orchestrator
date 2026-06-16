@@ -286,7 +286,7 @@ async def report_text(request: TextReportRequest, background_tasks: BackgroundTa
 
     # Register incident immediately so polling can start
     orchestrator.memory_block.register_incident(signal)
-    firestore.save_incident(signal_id, {
+    await asyncio.to_thread(firestore.save_incident, signal_id, {
         "incident_id": signal_id,
         "status": "PROCESSING",
         "source": "text",
@@ -332,7 +332,7 @@ async def report_image(
 
     # Run Gemini Vision analysis
     try:
-        vision_result = vision.analyze_crisis_image(image_bytes, mime_type)
+        vision_result = await asyncio.to_thread(vision.analyze_crisis_image, image_bytes, mime_type)
     except Exception as e:
         logging.error(f"Vision analysis error: {e}")
         vision_result = {
@@ -359,7 +359,7 @@ async def report_image(
     background_tasks.add_task(orchestrator.process_incident, signal)
     orchestrator.memory_block.register_incident(signal)
 
-    firestore.save_incident(signal_id, {
+    await asyncio.to_thread(firestore.save_incident, signal_id, {
         "incident_id": signal_id,
         "status": "PROCESSING",
         "source": "image",
@@ -407,7 +407,7 @@ async def report_voice(
 
     # Run Gemini Speech transcription
     try:
-        speech_result = speech.transcribe_audio(audio_bytes, mime_type)
+        speech_result = await asyncio.to_thread(speech.transcribe_audio, audio_bytes, mime_type)
     except Exception as e:
         logging.error(f"Speech transcription error: {e}")
         speech_result = {
@@ -423,7 +423,7 @@ async def report_voice(
         try:
             image_bytes = await image.read()
             img_mime = image.content_type or "image/jpeg"
-            vision_result = vision.analyze_crisis_image(image_bytes, img_mime)
+            vision_result = await asyncio.to_thread(vision.analyze_crisis_image, image_bytes, img_mime)
         except Exception as e:
             logging.error(f"Image analysis during voice report failed: {e}")
             vision_result = {"description": f"Failed to analyze image: {e}"}
@@ -457,7 +457,7 @@ async def report_voice(
     background_tasks.add_task(orchestrator.process_incident, signal)
     orchestrator.memory_block.register_incident(signal)
 
-    firestore.save_incident(signal_id, {
+    await asyncio.to_thread(firestore.save_incident, signal_id, {
         "incident_id": signal_id,
         "status": "PROCESSING",
         "source": "voice",
@@ -548,7 +548,7 @@ async def get_incidents(user_id: Optional[str] = None):
         incidents.append(entry)
 
     # Also merge from Firestore (persisted incidents)
-    firestore_incidents = firestore.get_all_incidents(user_id=user_id)
+    firestore_incidents = await asyncio.to_thread(firestore.get_all_incidents, user_id)
     fs_ids = {i.get("id") or i.get("incident_id") for i in firestore_incidents if i}
     memory_ids = {i.get("incident_id") for i in incidents if i}
     for fi in firestore_incidents:
@@ -609,7 +609,7 @@ async def clear_all_incidents():
         orchestrator.memory_block.active_incidents.clear()
         
         # Clear database and firestore fallback in-memory records
-        firestore.clear_all_data()
+        await asyncio.to_thread(firestore.clear_all_data)
         
         return {
             "success": True,
@@ -653,7 +653,7 @@ async def get_incident(incident_id: str):
         return result
 
     # Fall back to Firestore
-    fs_data = firestore.get_incident(incident_id)
+    fs_data = await asyncio.to_thread(firestore.get_incident, incident_id)
     if fs_data:
         return fs_data
 
@@ -688,7 +688,7 @@ async def get_resources():
     """
     Get current resource inventory and rescue team status.
     """
-    resources = firestore.get_resources()
+    resources = await asyncio.to_thread(firestore.get_resources)
     summary = {
         "rescue_teams": {"available": 0, "en_route": 0, "deployed": 0},
         "ambulances": {"available": 0, "en_route": 0},
@@ -748,7 +748,7 @@ async def add_resource(request: AddResourceRequest):
             "status": request.status,
             "location": request.location
         }
-        firestore._save_resource(request.resource_id, data)
+        await asyncio.to_thread(firestore._save_resource, request.resource_id, data)
         return {
             "success": True,
             "message": f"Resource {request.resource_id} successfully added.",

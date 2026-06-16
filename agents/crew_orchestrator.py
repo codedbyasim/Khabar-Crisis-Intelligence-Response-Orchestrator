@@ -329,7 +329,7 @@ class KhabarCrewOrchestrator:
     async def process_incident(self, raw_signal: RawCrisisSignal):
         memory = self.memory_block.register_incident(raw_signal)
         self.log_trace(memory, "INGESTION", f"Signal received via {raw_signal.source_type}")
-        self.push_to_firestore(memory)
+        await asyncio.to_thread(self.push_to_firestore, memory)
 
         max_retries = 2
 
@@ -359,7 +359,7 @@ class KhabarCrewOrchestrator:
             except Exception as e:
                 self.log_trace(memory, "DETECTION_ERROR", str(e))
                 if attempt == max_retries - 1:
-                    self._trigger_fallback(memory, "Detection Failed")
+                    await self._trigger_fallback(memory, "Detection Failed")
                     return
 
         # ── Validate signal (unchanged logic) ─────────────────────────────
@@ -378,7 +378,7 @@ class KhabarCrewOrchestrator:
             if memory.detection_output:
                 memory.detection_output.is_verified = False
                 memory.detection_output.verification_reason = reason
-            self.push_to_firestore(memory)
+            await asyncio.to_thread(self.push_to_firestore, memory)
             return
 
         priority = memory.detection_output.priority.value if memory.detection_output else "P5"
@@ -400,11 +400,11 @@ class KhabarCrewOrchestrator:
             lat, lng = float(user_lat), float(user_lng)
             source = "user_app_gps"
         else:
-            geo = self.maps.geocode_location(location_text)
+            geo = await asyncio.to_thread(self.maps.geocode_location, location_text)
             lat, lng = geo["lat"], geo["lng"]
             source = geo["source"]
 
-        maps_ctx = self.maps.get_context_for_analysis(lat, lng, location_text)
+        maps_ctx = await asyncio.to_thread(self.maps.get_context_for_analysis, lat, lng, location_text)
         maps_ctx["geocoded_location"]["source"] = source
 
         context = ContextSignals(
@@ -444,7 +444,7 @@ class KhabarCrewOrchestrator:
             except Exception as e:
                 self.log_trace(memory, "ANALYSIS_ERROR", str(e))
                 if attempt == max_retries - 1:
-                    self._trigger_fallback(memory, "Analysis Failed")
+                    await self._trigger_fallback(memory, "Analysis Failed")
                     return
 
         # ── STAGE 3: PLANNING (via CrewAI Task) ───────────────────────────
@@ -477,7 +477,7 @@ class KhabarCrewOrchestrator:
             except Exception as e:
                 self.log_trace(memory, "PLANNING_ERROR", str(e))
                 if attempt == max_retries - 1:
-                    self._trigger_fallback(memory, "Planning Failed")
+                    await self._trigger_fallback(memory, "Planning Failed")
                     return
 
         # ── STAGE 4: EXECUTION (via CrewAI Task) ──────────────────────────
@@ -497,7 +497,7 @@ class KhabarCrewOrchestrator:
 
         # Push EXECUTING status so the app shows progress immediately
         memory.system_state.status = "EXECUTING"
-        self.push_to_firestore(memory)
+        await asyncio.to_thread(self.push_to_firestore, memory)
 
         for attempt in range(max_retries):
             try:
@@ -511,7 +511,8 @@ class KhabarCrewOrchestrator:
                 memory.system_state.incident_id = memory.incident_id
 
                 # Send real Urdu alert via AlertService
-                alert_result = self.alerts.broadcast_crisis_alert(
+                alert_result = await asyncio.to_thread(
+                    self.alerts.broadcast_crisis_alert,
                     incident_type=memory.detection_output.incident_type.value,
                     location=location_text,
                     severity=memory.detection_output.severity.value,
@@ -523,17 +524,17 @@ class KhabarCrewOrchestrator:
                     f"✅ Tools executed | Alert sent to {alert_result['recipient_count']} users | "
                     f"State: {memory.system_state.status}"
                 )
-                self.push_to_firestore(memory)
+                await asyncio.to_thread(self.push_to_firestore, memory)
                 break
             except asyncio.TimeoutError:
                 self.log_trace(memory, "EXECUTION_ERROR", "Execution timed out after 120s — using fallback")
                 if attempt == max_retries - 1:
-                    self._trigger_fallback(memory, "Execution Timeout")
+                    await self._trigger_fallback(memory, "Execution Timeout")
                     return
             except Exception as e:
                 self.log_trace(memory, "EXECUTION_ERROR", str(e))
                 if attempt == max_retries - 1:
-                    self._trigger_fallback(memory, "Execution Failed")
+                    await self._trigger_fallback(memory, "Execution Failed")
                     return
 
         # ── Build CrewAI Crew (sequential, 4 tasks) ───────────────────────
@@ -555,12 +556,12 @@ class KhabarCrewOrchestrator:
             f"✅ CrewAI 4-stage pipeline completed | "
             f"Crew agents: {len(crew.agents)} | Tasks: {len(crew.tasks)}"
         )
-        self.push_to_firestore(memory)
+        await asyncio.to_thread(self.push_to_firestore, memory)
 
-    def _trigger_fallback(self, memory: IncidentMemory, reason: str):
+    async def _trigger_fallback(self, memory: IncidentMemory, reason: str):
         self.log_trace(memory, "FALLBACK", f"Manual override triggered: {reason}")
         memory.system_state.status = "MANUAL_REVIEW_REQUIRED"
-        self.push_to_firestore(memory)
+        await asyncio.to_thread(self.push_to_firestore, memory)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

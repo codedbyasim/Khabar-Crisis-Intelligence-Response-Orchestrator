@@ -1,6 +1,7 @@
 import json
 import logging
 import httpx
+import asyncio
 from enum import Enum
 from typing import List, Optional, Any, Dict
 from pydantic import BaseModel, Field, ValidationError
@@ -162,7 +163,7 @@ class DetectionAgent:
             lat = float(signal.metadata.get("lat") or 33.6844)
             lng = float(signal.metadata.get("lng") or 73.0479)
             
-        weather_info = get_live_weather(lat, lng)
+        weather_info = await asyncio.to_thread(get_live_weather, lat, lng)
         
         sensor_context = f"""
 LIVE ENVIRONMENTAL SENSOR CONTEXT:
