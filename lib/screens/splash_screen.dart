@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:khabar/main.dart';
 import 'package:khabar/theme/app_colors.dart';
 
@@ -39,46 +38,14 @@ class _SplashScreenState extends State<SplashScreen> {
           Positioned.fill(
             child: CustomPaint(painter: GeometricPatternPainter()),
           ),
-          // Center Tile
+          // Center Khabar Logo
           Center(
             child: Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                color: kPrimaryTeal,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text(
-                    'خبر',
-                    style: TextStyle(
-                      fontSize: 36,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                      height: 1.0,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'KHABAR',
-                    style: GoogleFonts.nunito(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w300,
-                      color: Colors.white,
-                      letterSpacing: 4,
-                      height: 1.0,
-                    ),
-                  ),
-                ],
+              padding: const EdgeInsets.all(16.0),
+              constraints: const BoxConstraints(maxWidth: 220, maxHeight: 220),
+              child: Image.asset(
+                'assets/Khabar Logo.png',
+                fit: BoxFit.contain,
               ),
             ),
           ),
