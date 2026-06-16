@@ -33,6 +33,7 @@ class _HomeScreenState extends State<HomeScreen>
     super.initState();
     _selectedLanguage = LanguageProvider().language;
     LanguageProvider().addListener(_onLanguageChanged);
+    ConnectivityService().addListener(_onConnectivityChanged);
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 1),
@@ -131,9 +132,21 @@ class _HomeScreenState extends State<HomeScreen>
     });
   }
 
+  void _onConnectivityChanged() {
+    if (mounted) {
+      setState(() {
+        _isLoadingWeather = true;
+        _isLoadingNews = true;
+      });
+      _fetchWeatherData();
+      _fetchNewsData();
+    }
+  }
+
   @override
   void dispose() {
     LanguageProvider().removeListener(_onLanguageChanged);
+    ConnectivityService().removeListener(_onConnectivityChanged);
     _pulseController.dispose();
     super.dispose();
   }
