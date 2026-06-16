@@ -2,7 +2,7 @@
 
 ## Overview
 KHABAR is a **decentralized, AI-driven emergency response orchestration system** for Pakistan.  
-Citizens report crises via a Flutter mobile app. An AI 4-agent pipeline automatically detects, analyses, plans, and executes emergency responses. Coordinators monitor and command via a premium React web dashboard.
+Citizens register/login and report crises via a Flutter mobile app. All reports are dynamically linked to their user profiles. An AI 4-agent pipeline automatically detects, analyses, plans, and executes emergency responses. If internet connectivity drops, citizens can access a 100% offline, on-device AI emergency assistant from the login screen. Coordinators monitor and command via a premium React web dashboard.
 
 ---
 
@@ -10,17 +10,24 @@ Citizens report crises via a Flutter mobile app. An AI 4-agent pipeline automati
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│                        CITIZEN INTERFACES                            │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐               │
-│  │  Text Report │  │ Photo Report │  │ Voice Report │               │
-│  │ (Urdu/Roman) │  │ (Vision AI)  │  │ (Whisper AI) │               │
-│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘               │
-│         └─────────────────┴──────────────────┘                       │
-│                       Flutter Mobile App                             │
-│                   POST /report/text|image|voice                      │
-└───────────────────────────┬──────────────────────────────────────────┘
-                            │
-                            ▼
+│                        CITIZEN INTERFACES (MOBILE)                   │
+│                                                                      │
+│  ┌──────────────────────────────┐    ┌────────────────────────────┐  │
+│  │   ONLINE REPORTING GATEWAYS  │    │  100% OFFLINE ASSISTANT    │  │
+│  │  ┌──────────┐  ┌──────────┐  │    │  ┌──────────────────────┐  │  │
+│  │  │   Text   │  │  Photo   │  │    │  │ OfflineChatScreen    │  │  │
+│  │  │  Signal  │  │ (Vision) │  │    │  │ (No Backend/Network) │  │  │
+│  │  └────┬─────┘  └────┬─────┘  │    │  └──────────┬───────────┘  │  │
+│  │       └──────┬──────┘        │    │             ▼              │  │
+│  │              ▼               │    │       LocalLlmService      │  │
+│  │      Flutter Mobile App      │    │  (On-Device Matcher: EN/   │  │
+│  │   (Profile ID linked via     │    │      UR/ROM Urdu)          │  │
+│  │       profile.json)          │    └────────────────────────────┘  │
+│  └──────────────┬───────────────┘                                    │
+└─────────────────┼────────────────────────────────────────────────────┘
+                  │
+                  │ POST /report/... or /auth/...
+                  ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │               PYTHON FASTAPI BACKEND  (api_server.py)                │
 │                        Port: 8000                                    │
@@ -34,8 +41,11 @@ Citizens report crises via a Flutter mobile app. An AI 4-agent pipeline automati
 │                       SharedMemoryBlock                              │
 │                                                                      │
 │   LLM Chain:  AIML API (google/gemini-2.5-flash)                    │
-│                  → Local Qwen/Gemma GGUF                             │
-│                       → Hardcoded JSON (last resort)                │
+│                  → Fallback: gpt-4o-mini                             │
+│                  → Fallback: Llama 3 8B                              │
+│                  → Hardcoded JSON (last resort)                      │
+│                                                                      │
+│   *Note: Backend GGUF model is decoupled to eliminate CPU load.      │
 └───────────┬─────────────────────────────────────────────────────────┘
             │
      ┌──────┴──────────────────────────────┐
@@ -58,12 +68,8 @@ Citizens report crises via a Flutter mobile app. An AI 4-agent pipeline automati
 │  ┌──────────┐ ┌────────────┐ ┌───────────┐ ┌──────────────────────┐ │
 │  │ MapWidget│ │ResourceMgr │ │AgentPanel │ │ AI Command Chatbot   │ │
 │  │(Leaflet) │ │(Real-time) │ │(Allocations│ │ POST /admin/chat     │ │
-│  └──────────┘ └────────────┘ └───────────┘ └──────────────────────┘ │
-│  ┌──────────┐ ┌────────────┐ ┌───────────┐ ┌───────────┐            │
-│  │StatsGrid │ │CaseTracker │ │AlertsPanel│ │Situation  │            │
-│  │          │ │(Progress   │ │           │ │Summary    │            │
-│  │          │ │ Rings)     │ │           │ │           │            │
-│  └──────────┘ └────────────┘ └───────────┘ └───────────┘            │
+│  │          │ │  Status)   │ │  Timelines│ │                      │ │
+│  │└─────────┘ └────────────┘ └───────────┘ └──────────────────────┘ │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -74,28 +80,35 @@ Citizens report crises via a Flutter mobile app. An AI 4-agent pipeline automati
 **State Management:** Local `StatefulWidget` + `ChangeNotifier` (`LanguageProvider`)  
 **Networking:** `http` package — calls FastAPI backend  
 **Location & Sensors:** `geolocator` for GPS, `camera` for photo, `record` for audio  
+**Session Management:** Profile local persistence via `profile.json` saved inside device directories on login/signup.
 
 **Key Screens:**
 
-| Screen | File |
-|---|---|
-| Dashboard + Live Map | `lib/screens/map_screen.dart` |
-| Text Crisis Report | `lib/screens/text_signal_screen.dart` |
-| Photo Report (Vision) | `lib/screens/photo_verification_screen.dart` |
-| Voice Report (Whisper) | `lib/screens/voice_report_screen.dart` |
-| Incident Detail + Trace | `lib/screens/incident_tracker_screen.dart` |
-| AI Chat (Online + Offline) | `lib/screens/ai_chat_screen.dart` |
-| Live Alerts Feed | `lib/screens/alerts_screen.dart` |
+| Screen | File | Description |
+|---|---|---|
+| Dashboard + Live Map | `lib/screens/map_screen.dart` | Incident and resource display |
+| Login / Signup | `lib/screens/auth_screen.dart` | User entrance card with offline assistant access |
+| Offline AI Assistant | `lib/screens/offline_chat_screen.dart` | 100% offline chat simulator |
+| Text Crisis Report | `lib/screens/text_signal_screen.dart` | Submit text with location and user ID |
+| Photo Report (Vision) | `lib/screens/photo_verification_screen.dart` | Photo damage analysis |
+| Voice Report (Whisper) | `lib/screens/voice_report_screen.dart` | Speech signal transcription |
+| Incident Detail + Trace | `lib/screens/incident_tracker_screen.dart` | Step-by-step progress tracking and live distance/ETA |
+| AI Chat (Online) | `lib/screens/ai_chat_screen.dart` | Online assistant (raises error if connection drops) |
+| Live Alerts Feed | `lib/screens/alerts_screen.dart` | Broadcast warning history |
 
 **Offline Mode Architecture:**
 ```
-ConnectivityService detects offline
-           ↓
-LocalLlmService.getOfflineResponse()
-           ↓
-     POST /local-chat  (Backend Qwen GGUF — no internet needed)
-           ↓ [backend unreachable]
-     Keyword-based hardcoded fallback
+[Auth Screen Page] -> Clicking "Offline AI Assistant"
+                             ↓
+              [OfflineChatScreen launched]
+                             ↓
+                User enters query message
+                             ↓
+               [LocalLlmService is invoked]
+                             ↓
+On-device keyword matching (Urdu script, Roman Urdu, and English)
+                             ↓
+     Returns rich safety instructions and helplines instantly
 ```
 
 ---
@@ -104,7 +117,8 @@ LocalLlmService.getOfflineResponse()
 
 **Port:** 8000  
 **Framework:** FastAPI + Uvicorn  
-**Validation:** Pydantic v2 models
+**Validation:** Pydantic v2 models  
+**Authorization**: self-contained authentication with PBKDF2 credential hashing.
 
 **Orchestration Layer:** FastAPI calls `KhabarCrewOrchestrator` (`agents/crew_orchestrator.py`), which orchestrates a hybrid pipeline using a sequential CrewAI Crew. CrewAI agents execute the 4 custom agents as specialized tools using an AIML API-configured `crewai.LLM`.
 
@@ -113,35 +127,25 @@ LocalLlmService.getOfflineResponse()
 - TomTom traffic flow (every 10 min)
 - Proactive crisis signal injection if thresholds exceeded
 
-**Note:** Automated background polling is disabled by default to conserve AIML API quota. Enable by setting `ENABLE_AUTO_POLLING=true` in `agents/.env`.
-
 ---
 
 ## 3. LLM Client Chain (`agents/llm_client.py`)
 
 ```
-Tier 1: AIML API
-  endpoint:    https://api.aimlapi.com/v1
-  model:       google/gemini-2.5-flash
-  protocol:    OpenAI-compatible AsyncOpenAI client
-  max_retries: 0  (SDK retries disabled — manual 3-attempt loop used)
+Tier 1: AIML API (Multi-model resilience retry loop)
+  1. Primary Model:   google/gemini-2.5-flash  (timeout: 20 seconds)
+          ↓ [times out or errors]
+  2. Backup Model 1:  gpt-4o-mini               (timeout: 15 seconds)
+          ↓ [times out or errors]
+  3. Backup Model 2:  meta-llama/Llama-3-8b-instruct-maas (timeout: 15 seconds)
 
-    ↓ [3 manual retries with asyncio.wait_for, 45s timeout each]
+    ↓ [all attempts exhausted]
 
-Tier 2: Local GGUF Model  (agents/local_model.py)
-  primary:   models/Qwen2.5-0.5B-Instruct-Q4_K_M.gguf   (380 MB)
-  secondary: models/gemma-4-E2B-it-UD-IQ2_M.gguf        (2.3 GB)
-  engine:    llama-cpp-python  (CPU inference, no GPU required)
-  context:   2048 tokens
-
-    ↓ [model not loaded / unavailable]
-
-Tier 3: Hardcoded JSON
-  Deterministic structured fallback per agent type
-  Never raises an exception — system always responds
+Tier 2: Hardcoded JSON Fallback
+  Pydantic schema-aligned mock models. Never fails to respond.
 ```
 
-**Important:** The OpenAI SDK's built-in auto-retry is explicitly disabled (`max_retries=0`) in all 3 client files (`llm_client.py`, `gemini_vision.py`, `gemini_speech.py`). Our own 3-attempt `asyncio.wait_for` retry loop is the sole retry mechanism.
+**Note on Local Model Decoupling:** To save CPU, memory, and startup latency on the server, `local_model.py`'s GGUF inference features have been bypassed. If Tier 1 fails, the system bypasses Gemma GGUF loading and falls back directly to the hardcoded JSON layer.
 
 ---
 
@@ -151,10 +155,12 @@ Tier 3: Hardcoded JSON
 **Fallback:** Thread-safe in-memory Python dictionaries (auto-heals if DB offline)
 
 Tables:
-- `incidents` — all reported disasters with full agent traces, before/after states
-- `resources` — live inventory (ambulances, rescue teams, fire trucks, dewatering pumps) with `assigned_incident` column (auto-created if missing via self-healing ALTER TABLE)
+- `users` — stores `user_id` (primary key), `email`, `password_hash`, `name`, `region`, and `created_at`.
+- `incidents` — all reported disasters, linked to the reporter's `user_id`.
+- `resources` — live inventory with `assigned_incident` column (auto-created if missing via self-healing ALTER TABLE).
 
-The `KhabarFirestore` singleton preserves old Firestore method signatures for backward compatibility. Internally routes all calls to Supabase SQL.
+**Automatic Resource Releasing**:
+When an incident is updated to `"RESOLVED"` or `"CLOSED"` (via admin dashboard status commands), or when `clear_database` is triggered, the system automatically marks all allocated resource records as `'available'` and clears their `assigned_incident` fields to `NULL` / `None` in Postgres and local memory.
 
 ---
 
@@ -162,22 +168,21 @@ The `KhabarFirestore` singleton preserves old Firestore method signatures for ba
 
 - Uses **Firebase Admin SDK** with OAuth2 service account
 - Sends **bilingual Urdu + English** push notifications via FCM HTTP v1 API
-- Falls back to simulated delivery if `firebase_service_account.json` is missing
-- Uses topic `khabar_public_alerts` — all Flutter app users auto-subscribed
+- Topic: `khabar_public_alerts` — all mobile users auto-subscribed
 
 ---
 
 ## 6. Maps & Geocoding (`agents/maps_service.py`)
 
 **Geocoding chain:**
-```
 1. Google Maps Geocoding API  (if GOOGLE_MAPS_API_KEY set)
 2. Local Pakistan city dictionary  (33 pre-loaded locations, instant)
 3. OpenStreetMap Nominatim  (free, no key, SSL-verified)
 4. Default fallback → Islamabad center (33.6844, 73.0479)
-```
 
-**ETA calculation:** Google Distance Matrix API → Haversine formula fallback
+**Distance & ETA calculation:**
+- Calculates geographic distance between resources and incidents dynamically using the **Haversine formula**.
+- Computes travel durations (ETA) using average speed profiles of dispatched vehicles (Ambulance/Police move faster, WASA pumps/Rescue teams move slower).
 
 ---
 

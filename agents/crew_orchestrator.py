@@ -264,7 +264,7 @@ class KhabarCrewOrchestrator:
         # Sync deployed/active units to resources database table
         status = memory.system_state.status
         active_units = memory.system_state.active_units
-        if status in ("REJECTED", "PIPELINE_COMPLETE"):
+        if status in ("REJECTED", "PIPELINE_COMPLETE", "RESOLVED", "CLOSED"):
             active_units = {}
         self._sync_resources_to_database(memory.incident_id, active_units)
 

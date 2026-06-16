@@ -22,15 +22,13 @@ flowchart LR
 
 ## LLM Chain (All Agents)
 
-Every agent calls `LLMClient.generate_json()` which uses this 3-tier fallback:
+Every agent calls `LLMClient.generate_json()` which uses this multi-model fallback chain:
 
 ```
-AIML API (google/gemini-2.5-flash)  →  Local GGUF  →  Hardcoded JSON
-         ↑                                  ↑                ↑
-   agents/llm_client.py           agents/local_model.py  agents/llm_client.py
+AIML API Primary (Gemini 2.5 Flash) → Backup 1 (GPT-4o-Mini) → Backup 2 (Llama 3 8B) → Hardcoded Structured JSON (last resort)
 
 SDK auto-retries: DISABLED (max_retries=0 on all OpenAI client instances)
-Manual retries:   3 attempts × asyncio.wait_for(timeout=45s)
+Manual retries:   3 attempts (1 attempt per model) with custom timeouts (20s for Gemini, 15s for backups)
 ```
 
 ---

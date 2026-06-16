@@ -9,6 +9,7 @@ import 'package:khabar/api_config.dart';
 import 'package:khabar/utils/location_helper.dart';
 import 'package:khabar/utils/web_helper.dart';
 import 'package:khabar/utils/connectivity_service.dart';
+import 'package:khabar/utils/user_profile_helper.dart';
 
 
 import 'package:khabar/theme/language_provider.dart';
@@ -141,6 +142,7 @@ class _TextSignalScreenState extends State<TextSignalScreen> {
           'text': text,
           'lat': _markerPosition.latitude,
           'lng': _markerPosition.longitude,
+          'user_id': UserProfileHelper.cachedProfile?['user_id'],
         }),
       );
 
@@ -252,7 +254,7 @@ class _TextSignalScreenState extends State<TextSignalScreen> {
                     ValueListenableBuilder<bool>(
                       valueListenable: ConnectivityService(),
                       builder: (context, isOnline, child) {
-                        if (isOnline && checkGoogleMapsLoaded()) {
+                        if (ConnectivityService().hasInternet && checkGoogleMapsLoaded()) {
                           return GoogleMap(
                             initialCameraPosition: CameraPosition(
                               target: _markerPosition,

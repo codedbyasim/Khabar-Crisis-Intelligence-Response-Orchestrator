@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI):
 # ── App ──
 app = FastAPI(
     title="KHABAR Crisis Intelligence API",
-    description="AIML API + Local Gemma 4-agent crisis response pipeline",
+    description="AIML API 4-agent crisis response pipeline",
     version="2.0.0",
     lifespan=lifespan,
 )
@@ -74,6 +74,61 @@ orchestrator = KhabarCrewOrchestrator()
 vision = GeminiVision()
 speech = GeminiSpeech()
 
+class TextReportRequest(BaseModel):
+    text: str
+    lat: float = 33.6844
+    lng: float = 73.0479
+    user_id: Optional[str] = None
+
+
+class UserSignupRequest(BaseModel):
+    email: str
+    password: str
+    name: str
+    region: str
+
+
+class UserLoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+# ════════════════════════════════════════════
+# AUTHENTICATION ENDPOINTS
+# ════════════════════════════════════════════
+@app.post("/auth/signup")
+async def auth_signup(request: UserSignupRequest):
+    import uuid
+    email_clean = request.email.lower().strip()
+    if "@" not in email_clean:
+        raise HTTPException(status_code=400, detail="Invalid email format")
+    if len(request.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    
+    user_id = f"USR-{uuid.uuid4().hex[:8].upper()}"
+    try:
+        user = firestore.create_user(
+            user_id=user_id,
+            email=email_clean,
+            password=request.password,
+            name=request.name,
+            region=request.region
+        )
+        if not user:
+            raise HTTPException(status_code=400, detail="Email already registered")
+        return {"success": True, "user": user}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/auth/login")
+async def auth_login(request: UserLoginRequest):
+    user = firestore.authenticate_user(request.email, request.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+    return {"success": True, "user": user}
+
+
 # ════════════════════════════════════════════
 # ROOT
 # ════════════════════════════════════════════
@@ -83,7 +138,7 @@ async def root():
         "status": "online",
         "system": "KHABAR Crisis Intelligence & Response Orchestrator",
         "version": "2.0.0",
-        "ai_backend": "AIML API (Gemini 2.5 Flash) + Local Gemma Fallback",
+        "ai_backend": "AIML API (Gemini 2.5 Flash)",
         "endpoints": {
             "POST /report/text":     "Submit text crisis report (Urdu/English/Roman Urdu)",
             "POST /report/image":    "Submit photo for Gemini Vision damage assessment",
@@ -208,10 +263,7 @@ async def live_news():
 # ENDPOINT 1 — POST /report/text
 # FR-01, FR-06, FR-07 to FR-11
 # ════════════════════════════════════════════
-class TextReportRequest(BaseModel):
-    text: str
-    lat: float = 33.6844
-    lng: float = 73.0479
+
 
 
 @app.post("/report/text")
@@ -226,7 +278,7 @@ async def report_text(request: TextReportRequest, background_tasks: BackgroundTa
         source_type=InputSourceType.TEXT_ROMAN_URDU,
         raw_content=request.text,
         timestamp=datetime.now(timezone.utc).isoformat(),
-        metadata={"lat": request.lat, "lng": request.lng},
+        metadata={"lat": request.lat, "lng": request.lng, "user_id": request.user_id},
     )
 
     # Run pipeline in background so response is immediate
@@ -241,6 +293,7 @@ async def report_text(request: TextReportRequest, background_tasks: BackgroundTa
         "raw_input": request.text,
         "lat": request.lat,
         "lng": request.lng,
+        "user_id": request.user_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "traces": [f"[{datetime.now(timezone.utc).isoformat()}] [INGESTION] Text signal received. Pipeline starting..."],
     })
@@ -264,6 +317,7 @@ async def report_image(
     lat: float = Form(default=33.6844),
     lng: float = Form(default=73.0479),
     description: str = Form(default=""),
+    user_id: Optional[str] = Form(default=None),
     background_tasks: BackgroundTasks = None,
 ):
     """
@@ -299,7 +353,7 @@ async def report_image(
         source_type=InputSourceType.IMAGE_SUMMARY,
         raw_content=combined_content,
         timestamp=datetime.now(timezone.utc).isoformat(),
-        metadata={"lat": lat, "lng": lng, "vision_result": vision_result},
+        metadata={"lat": lat, "lng": lng, "vision_result": vision_result, "user_id": user_id},
     )
 
     background_tasks.add_task(orchestrator.process_incident, signal)
@@ -311,6 +365,7 @@ async def report_image(
         "source": "image",
         "vision_analysis": vision_result,
         "lat": lat, "lng": lng,
+        "user_id": user_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "traces": [
             f"[{datetime.now(timezone.utc).isoformat()}] [VISION] Gemini Vision: "
@@ -339,6 +394,7 @@ async def report_voice(
     image: Optional[UploadFile] = File(default=None),
     lat: float = Form(default=33.6844),
     lng: float = Form(default=73.0479),
+    user_id: Optional[str] = Form(default=None),
     background_tasks: BackgroundTasks = None,
 ):
     """
@@ -395,7 +451,7 @@ async def report_voice(
         source_type=InputSourceType.VOICE_TRANSCRIPTION,
         raw_content=combined,
         timestamp=datetime.now(timezone.utc).isoformat(),
-        metadata={"lat": lat, "lng": lng, "speech_result": speech_result, "vision_result": vision_result},
+        metadata={"lat": lat, "lng": lng, "speech_result": speech_result, "vision_result": vision_result, "user_id": user_id},
     )
 
     background_tasks.add_task(orchestrator.process_incident, signal)
@@ -408,6 +464,7 @@ async def report_voice(
         "speech_analysis": speech_result,
         "vision_analysis": vision_result,
         "lat": lat, "lng": lng,
+        "user_id": user_id,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "traces": [
             f"[{datetime.now(timezone.utc).isoformat()}] [SPEECH] Gemini transcribed: "
@@ -433,7 +490,7 @@ async def report_voice(
 # FR-24: P1-P5 priority queue with live status
 # ════════════════════════════════════════════
 @app.get("/incidents")
-async def get_incidents():
+async def get_incidents(user_id: Optional[str] = None):
     """
     Get all active incidents in P1-P5 priority order.
     FR-24: Dashboard shall show the full P1-P5 priority queue with live status.
@@ -442,6 +499,13 @@ async def get_incidents():
 
     # From in-memory pipeline (live processing)
     for inc_id, memory in orchestrator.memory_block.active_incidents.items():
+        # Check user_id filter
+        memory_user_id = None
+        if memory.raw_signal and memory.raw_signal.metadata:
+            memory_user_id = memory.raw_signal.metadata.get("user_id")
+        if user_id and memory_user_id != user_id:
+            continue
+
         entry = {
             "incident_id": inc_id,
             "status": memory.system_state.status,
@@ -484,7 +548,7 @@ async def get_incidents():
         incidents.append(entry)
 
     # Also merge from Firestore (persisted incidents)
-    firestore_incidents = firestore.get_all_incidents()
+    firestore_incidents = firestore.get_all_incidents(user_id=user_id)
     fs_ids = {i.get("id") or i.get("incident_id") for i in firestore_incidents if i}
     memory_ids = {i.get("incident_id") for i in incidents if i}
     for fi in firestore_incidents:
@@ -493,9 +557,31 @@ async def get_incidents():
             if inc_id and inc_id not in memory_ids:
                 incidents.append({**fi, "incident_id": inc_id})
 
-    # Sort by priority (P1 first)
-    priority_order = {"P1": 1, "P2": 2, "P3": 3, "P4": 4, "P5": 5}
-    incidents.sort(key=lambda x: priority_order.get(x.get("priority", "P5"), 5))
+    # Sort and filter based on request context
+    if user_id:
+        # Sort chronologically (most recent first)
+        def get_sort_key(x):
+            # Parse timestamp from incident_id: e.g. SIG-1781638658-TXT
+            inc_id = x.get("incident_id", "")
+            parts = inc_id.split("-")
+            if len(parts) >= 2 and parts[1].isdigit():
+                return float(parts[1])
+            # Fallback to parsing created_at ISO string
+            created = x.get("created_at")
+            if created:
+                try:
+                    return datetime.fromisoformat(created.replace("Z", "+00:00")).timestamp()
+                except Exception:
+                    pass
+            return 0.0
+
+        incidents.sort(key=get_sort_key, reverse=True)
+        # Limit to past 10 reported cases
+        incidents = incidents[:10]
+    else:
+        # Sort by priority (P1 first)
+        priority_order = {"P1": 1, "P2": 2, "P3": 3, "P4": 4, "P5": 5}
+        incidents.sort(key=lambda x: priority_order.get(x.get("priority", "P5"), 5))
 
     return {
         "total": len(incidents),
@@ -871,23 +957,10 @@ RULES:
     except Exception as e:
         logging.error(f"Error generating alert summary: {e}")
         fallback_msg = f"Alert at {request.location}: {request.title}. Please be careful and follow safety regulations."
-        try:
-            import local_model
-            lang_code = "en"
-            if target_lang in ("ur", "اردو", "Urdu"):
-                lang_code = "ur"
-                fallback_msg = f"ہنگامی الرٹ: {request.location} پر {request.title}۔ براہ کرم محتاط رہیں اور حفاظتی ہدایات پر عمل کریں۔"
-            elif target_lang in ("roman", "Roman Urdu"):
-                lang_code = "roman"
-                fallback_msg = f"Emergency Alert: {request.location} par {request.title}. Bara-e-meharbani ehtiyat bartein."
-                
-            if local_model.is_available():
-                prompt = f"Summarize this alert: {request.title} at {request.location}"
-                reply = local_model.generate_chat_response(prompt, lang_code, request.location)
-                if reply:
-                    fallback_msg = reply
-        except Exception:
-            pass
+        if target_lang in ("ur", "اردو", "Urdu"):
+            fallback_msg = f"ہنگامی الرٹ: {request.location} پر {request.title}۔ براہ کرم محتاط رہیں اور حفاظتی ہدایات پر عمل کریں۔"
+        elif target_lang in ("roman", "Roman Urdu"):
+            fallback_msg = f"Emergency Alert: {request.location} par {request.title}. Bara-e-meharbani ehtiyat bartein."
             
         return {
             "success": True,
@@ -1079,32 +1152,12 @@ FINAL REMINDER: The user's language is {target_lang}. You MUST follow the langua
             "response": response.choices[0].message.content
         }
     except Exception as e:
-        logging.warning(f"Online chat error: {e}. Falling back to local Qwen model...")
-        import local_model
-        try:
-            target_lang = request.language or "English"
-            if target_lang in ("ur", "اردو", "Urdu"):
-                lang_code = "ur"
-            elif target_lang in ("roman", "Roman Urdu"):
-                lang_code = "roman"
-            else:
-                lang_code = "en"
-            response_text = local_model.generate_chat_response(
-                message=request.message,
-                language=lang_code,
-                sector=user_loc,
-            )
-            return {
-                "success": True,
-                "response": f"{response_text}\n\n_[🤖 Local AI Fallback Mode — No Internet]_",
-            }
-        except Exception as local_err:
-            logging.error(f"Local fallback chat error: {local_err}")
-            return {
-                "success": False,
-                "error": str(e),
-                "response": "Maazrat, main is waqt connect nahi ho pa raha. Bara-e-meharbani dobara koshish karein."
-            }
+        logging.error(f"Online chat error: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "response": "Maazrat, main is waqt connect nahi ho pa raha. Bara-e-meharbani dobara koshish karein."
+        }
 
 
 
@@ -1229,52 +1282,6 @@ async def get_live_news():
         
         return fallback_news
 
-
-# ════════════════════════════════════════════
-# ENDPOINT — POST /local-chat
-# Offline AI chat using local Gemma GGUF model
-# No internet required — uses H:\khabar\models\gemma-4-E2B-it-UD-IQ2_M.gguf
-# ════════════════════════════════════════════
-class LocalChatRequest(BaseModel):
-    message: str
-    language: str = "English"
-    sector: str = "Islamabad"
-
-
-@app.post("/local-chat")
-async def local_chat(request: LocalChatRequest):
-    """
-    Offline AI chat powered by local Qwen GGUF model.
-    Uses H:\\khabar\\models\\Qwen2.5-0.5B-Instruct-Q4_K_M.gguf.
-    No internet connection required. Ideal for disaster/offline scenarios.
-    """
-    import local_model
-    try:
-        target_lang = request.language or "English"
-        if target_lang in ("ur", "اردو", "Urdu"):
-            lang_code = "ur"
-        elif target_lang in ("roman", "Roman Urdu"):
-            lang_code = "roman"
-        else:
-            lang_code = "en"
-        response_text = local_model.generate_chat_response(
-            message=request.message,
-            language=lang_code,
-            sector=request.sector,
-        )
-        return {
-            "success": True,
-            "response": response_text,
-            "mode": "local_qwen" if local_model.is_available() else "error_fallback",
-            "model": "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf" if local_model.is_available() else "none",
-        }
-    except Exception as e:
-        logging.error(f"[local-chat] Error: {e}")
-        return {
-            "success": False,
-            "response": "Koi emergency ho toh Rescue 1122 ya Police 15 call karein.",
-            "mode": "error_fallback",
-        }
 
 
 # ════════════════════════════════════════════

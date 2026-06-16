@@ -172,7 +172,7 @@ class _MapScreenState extends State<MapScreen> {
 
           if (lat == null || lng == null) continue;
           final String title = item['incident_type'] ?? 'Emergency Report';
-          final String priority = item['priority'] ?? 'P1';
+          final String priority = item['priority'] ?? 'P—';
           final String status = item['status'] ?? 'Active';
           final locObj = item['location'];
           final String address = (locObj is Map) ? (locObj['address'] ?? 'Islamabad') : 'Islamabad';
@@ -885,7 +885,7 @@ class _MapScreenState extends State<MapScreen> {
         children: [          ValueListenableBuilder<bool>(
             valueListenable: ConnectivityService(),
             builder: (context, isOnline, child) {
-              if (isOnline && checkGoogleMapsLoaded()) {
+              if (ConnectivityService().hasInternet && checkGoogleMapsLoaded()) {
                 return GoogleMap(
                   onMapCreated: _onMapCreated,
                   initialCameraPosition: CameraPosition(

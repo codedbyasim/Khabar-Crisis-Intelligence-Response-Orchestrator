@@ -12,7 +12,7 @@
 | Layer | Technology |
 |---|---|
 | Primary LLM | AIML API → `gemini/gemini-2.5-flash` (OpenAI-compatible) |
-| Offline LLM | Local Gemma GGUF via `llama-cpp-python` |
+| Offline LLM | On-Device client-side offline AI (regex matcher) |
 | Backend | Python FastAPI (`api_server.py`) |
 | Database | Supabase PostgreSQL + In-Memory fallback |
 | Mobile | Flutter 3.16+ / Dart |
@@ -53,9 +53,9 @@ Before executing any development phase, you must dynamically read and strictly f
 ## LLM Fallback Chain (DO NOT BREAK)
 
 ```
-AIML API (3 retries)
+AIML API (Gemini -> GPT -> Llama fallback retry loop)
      ↓
-Local Gemma GGUF  (agents/local_model.py)
+Local Gemma GGUF  (agents/local_model.py - bypassed on backend; runs on mobile client)
      ↓
 Hardcoded JSON    (generate_local_fallback in llm_client.py)
 ```

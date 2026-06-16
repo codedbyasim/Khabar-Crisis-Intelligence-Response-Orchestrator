@@ -64,6 +64,8 @@ def get_db_connection():
         raise e
 
 
+_IN_MEMORY_USERS = {}
+
 class KhabarFirestore:
     """
     Singleton database adapter communicating directly with Supabase PostgreSQL.
@@ -74,7 +76,117 @@ class KhabarFirestore:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
+            cls._instance._init_db()
         return cls._instance
+
+    def _init_db(self):
+        logging.info("[Supabase DB] Running self-healing database migrations...")
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            
+            # Create users table
+            cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id VARCHAR(255) PRIMARY KEY,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                name VARCHAR(255) NOT NULL,
+                region VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+            """)
+            
+            # Check for user_id column in incidents table
+            cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'incidents' AND column_name = 'user_id';")
+            if not cur.fetchone():
+                logging.info("[Supabase DB] Adding user_id column to incidents table...")
+                cur.execute("ALTER TABLE incidents ADD COLUMN user_id VARCHAR(255);")
+                
+            conn.commit()
+            cur.close()
+            conn.close()
+            logging.info("[Supabase DB] ✅ Database migrations verified successfully!")
+        except Exception as e:
+            if not isinstance(e, ConnectionAbortedError):
+                logging.warning(f"[Supabase DB] Migrations failed. Running offline memory mode. Error: {e}")
+
+    def _hash_password(self, password: str) -> str:
+        import hashlib
+        import os
+        salt = os.urandom(16)
+        key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100000)
+        return salt.hex() + ":" + key.hex()
+
+    def _verify_password(self, stored_password_hash: str, provided_password: str) -> bool:
+        import hashlib
+        try:
+            salt_hex, key_hex = stored_password_hash.split(":")
+            salt = bytes.fromhex(salt_hex)
+            key = bytes.fromhex(key_hex)
+            new_key = hashlib.pbkdf2_hmac('sha256', provided_password.encode('utf-8'), salt, 100000)
+            return new_key == key
+        except Exception:
+            return False
+
+    def create_user(self, user_id: str, email: str, password: str, name: str, region: str) -> dict:
+        hashed = self._hash_password(password)
+        email_clean = email.lower().strip()
+        _IN_MEMORY_USERS[email_clean] = {
+            "user_id": user_id,
+            "email": email_clean,
+            "password_hash": hashed,
+            "name": name,
+            "region": region
+        }
+        
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO users (user_id, email, password_hash, name, region)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (email) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    region = EXCLUDED.region,
+                    password_hash = EXCLUDED.password_hash
+                RETURNING user_id, email, name, region;
+            """, (user_id, email_clean, hashed, name.strip(), region.strip()))
+            row = cur.fetchone()
+            conn.commit()
+            cur.close()
+            conn.close()
+            if row:
+                return {"user_id": row[0], "email": row[1], "name": row[2], "region": row[3]}
+        except Exception as e:
+            if not isinstance(e, ConnectionAbortedError):
+                logging.error(f"[DB Auth] Error creating user: {e}")
+                raise e
+        return {"user_id": user_id, "email": email_clean, "name": name, "region": region}
+
+    def authenticate_user(self, email: str, password: str) -> Optional[dict]:
+        email_clean = email.lower().strip()
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT user_id, email, password_hash, name, region FROM users WHERE LOWER(email) = %s;", (email_clean,))
+            row = cur.fetchone()
+            cur.close()
+            conn.close()
+            if row:
+                user_id, user_email, password_hash, name, region = row
+                if self._verify_password(password_hash, password):
+                    return {"user_id": user_id, "email": user_email, "name": name, "region": region}
+            return None
+        except Exception as e:
+            if not isinstance(e, ConnectionAbortedError):
+                logging.error(f"[DB Auth] Error authenticating user: {e}")
+            
+            # Local memory fallback
+            user = _IN_MEMORY_USERS.get(email_clean)
+            if user and self._verify_password(user["password_hash"], password):
+                return {"user_id": user["user_id"], "email": user["email"], "name": user["name"], "region": user["region"]}
+            return None
 
     # Mock collection wrapper to avoid breaking older agentic tool direct references
     class CollectionWrapper:
@@ -152,7 +264,8 @@ class KhabarFirestore:
             "before_state": data.get("before_state") or {},
             "after_state": data.get("after_state") or {},
             "state_diff": data.get("state_diff") or {},
-            "public_alerts_sent": data.get("public_alerts_sent") or 0
+            "public_alerts_sent": data.get("public_alerts_sent") or 0,
+            "user_id": data.get("user_id")
         }
         _IN_MEMORY_INCIDENTS[incident_id] = memory_record
 
@@ -170,9 +283,9 @@ class KhabarFirestore:
             cur.execute("""
             INSERT INTO incidents (
                 incident_id, incident_type, lat, lng, priority, status, confidence,
-                location, traces, before_state, after_state, state_diff, public_alerts_sent
+                location, traces, before_state, after_state, state_diff, public_alerts_sent, user_id
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (incident_id) DO UPDATE SET
                 incident_type = EXCLUDED.incident_type,
                 lat = EXCLUDED.lat,
@@ -185,7 +298,8 @@ class KhabarFirestore:
                 before_state = EXCLUDED.before_state,
                 after_state = EXCLUDED.after_state,
                 state_diff = EXCLUDED.state_diff,
-                public_alerts_sent = EXCLUDED.public_alerts_sent;
+                public_alerts_sent = EXCLUDED.public_alerts_sent,
+                user_id = EXCLUDED.user_id;
             """, (
                 incident_id,
                 memory_record["incident_type"],
@@ -199,7 +313,8 @@ class KhabarFirestore:
                 before_json,
                 after_json,
                 diff_json,
-                memory_record["public_alerts_sent"]
+                memory_record["public_alerts_sent"],
+                memory_record["user_id"]
             ))
             
             conn.commit()
@@ -214,7 +329,12 @@ class KhabarFirestore:
         try:
             conn = get_db_connection()
             cur = conn.cursor()
-            cur.execute("SELECT * FROM incidents WHERE incident_id = %s;", (incident_id,))
+            cur.execute("""
+                SELECT incident_id, incident_type, lat, lng, priority, status, confidence,
+                       location, traces, before_state, after_state, state_diff, public_alerts_sent, user_id,
+                       created_at
+                FROM incidents WHERE incident_id = %s;
+            """, (incident_id,))
             row = cur.fetchone()
             cur.close()
             conn.close()
@@ -243,7 +363,9 @@ class KhabarFirestore:
                     "before_state": parse_field(row[9]),
                     "after_state": parse_field(row[10]),
                     "state_diff": parse_field(row[11]),
-                    "public_alerts_sent": row[12]
+                    "public_alerts_sent": row[12],
+                    "user_id": row[13],
+                    "created_at": row[14].isoformat() if row[14] else None
                 }
         except Exception as e:
             if not isinstance(e, ConnectionAbortedError):
@@ -255,12 +377,28 @@ class KhabarFirestore:
             return {**record, "id": incident_id}
         return record
 
-    def get_all_incidents(self) -> List[dict]:
+    def get_all_incidents(self, user_id: Optional[str] = None) -> List[dict]:
         incidents = []
         try:
             conn = get_db_connection()
             cur = conn.cursor()
-            cur.execute("SELECT * FROM incidents ORDER BY created_at DESC;")
+            if user_id:
+                cur.execute("""
+                    SELECT incident_id, incident_type, lat, lng, priority, status, confidence,
+                           location, traces, before_state, after_state, state_diff, public_alerts_sent, user_id,
+                           created_at
+                    FROM incidents 
+                    WHERE user_id = %s
+                    ORDER BY created_at DESC;
+                """, (user_id,))
+            else:
+                cur.execute("""
+                    SELECT incident_id, incident_type, lat, lng, priority, status, confidence,
+                           location, traces, before_state, after_state, state_diff, public_alerts_sent, user_id,
+                           created_at
+                    FROM incidents 
+                    ORDER BY created_at DESC;
+                """)
             rows = cur.fetchall()
             cur.close()
             conn.close()
@@ -289,7 +427,9 @@ class KhabarFirestore:
                     "before_state": parse_field(row[9]),
                     "after_state": parse_field(row[10]),
                     "state_diff": parse_field(row[11]),
-                    "public_alerts_sent": row[12]
+                    "public_alerts_sent": row[12],
+                    "user_id": row[13],
+                    "created_at": row[14].isoformat() if row[14] else None
                 })
             return incidents
         except Exception as e:
@@ -299,6 +439,8 @@ class KhabarFirestore:
         # Local memory list fallback sorted by timestamp
         fallback_list = []
         for inc_id, record in _IN_MEMORY_INCIDENTS.items():
+            if user_id and record.get("user_id") != user_id:
+                continue
             fallback_list.append({**record, "id": inc_id})
         return fallback_list
 
@@ -407,12 +549,13 @@ class KhabarFirestore:
 
         for r_id in _IN_MEMORY_RESOURCES:
             _IN_MEMORY_RESOURCES[r_id]["status"] = "available"
+            _IN_MEMORY_RESOURCES[r_id]["assigned_incident"] = None
 
         try:
             conn = get_db_connection()
             cur = conn.cursor()
             cur.execute("TRUNCATE TABLE incidents CASCADE;")
-            cur.execute("UPDATE resources SET status = 'available';")
+            cur.execute("UPDATE resources SET status = 'available', assigned_incident = NULL;")
             conn.commit()
             cur.close()
             conn.close()

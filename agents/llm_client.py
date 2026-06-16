@@ -12,8 +12,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from openai import AsyncOpenAI
-import local_model
+from openai import AsyncOpenAI, APITimeoutError
 
 
 def generate_local_fallback(system_prompt: str, user_prompt: str, schema_dict: Dict[str, Any] = None) -> str:
@@ -193,12 +192,13 @@ class LLMClient:
         system_prompt: str,
         user_prompt: str,
         json_schema_dict: Dict[str, Any] = None,
-        timeout_seconds: int = 45,
+        timeout_seconds: int = 20,
     ) -> str:
         """
         Calls AIML API and enforces JSON output.
-        Each attempt is wrapped in asyncio.wait_for with `timeout_seconds`.
-        Retries up to 3 times. Falls back to Local Gemma → hardcoded JSON.
+        Each attempt is wrapped in asyncio.wait_for with custom timeouts.
+        Uses a multi-model fallback chain to handle model outages dynamically.
+        Retries up to 3 times. Falls back to hardcoded JSON (last resort).
         """
         full_system = system_prompt
         if json_schema_dict:
@@ -213,43 +213,42 @@ class LLMClient:
             {"role": "user", "content": f"INPUT: {user_prompt}"}
         ]
 
+        # Multi-model resilience: Try Gemini 2.5 Flash, then fallback to GPT-4o-Mini, then Llama-3-8B
+        fallback_models = [
+            self.model,
+            "gpt-4o-mini",
+            "meta-llama/Llama-3-8b-instruct-maas"
+        ]
+
         max_retries = 3
         for attempt in range(max_retries):
+            current_model = fallback_models[attempt] if attempt < len(fallback_models) else self.model
+            # Wait up to 20s for the first try, and 15s for the backup tries
+            current_timeout = timeout_seconds if attempt == 0 else 15
+            
             try:
-                # ── Strict per-attempt timeout so we never hang forever ──
-                response = await asyncio.wait_for(
-                    self.client.chat.completions.create(
-                        model=self.model,
-                        messages=messages,
-                        response_format={"type": "json_object"},
-                        temperature=0.2,
-                    ),
-                    timeout=timeout_seconds,
+                logging.info(f"[LLMClient] Attempt {attempt + 1}: calling AIML API using model '{current_model}' (timeout: {current_timeout}s)...")
+                response = await self.client.chat.completions.create(
+                    model=current_model,
+                    messages=messages,
+                    response_format={"type": "json_object"},
+                    temperature=0.2,
+                    timeout=current_timeout,
                 )
                 content = response.choices[0].message.content
                 json.loads(content)  # validate JSON
-                logging.info(f"[LLMClient] ✅ AIML API responded (attempt {attempt + 1})")
+                logging.info(f"[LLMClient] ✅ AIML API responded successfully using model '{current_model}' (attempt {attempt + 1})")
                 return content
 
-            except asyncio.TimeoutError:
-                logging.warning(f"[LLMClient] Attempt {attempt + 1} — TIMED OUT after {timeout_seconds}s")
+            except (asyncio.TimeoutError, APITimeoutError):
+                logging.warning(f"[LLMClient] Attempt {attempt + 1} ({current_model}) — TIMED OUT after {current_timeout}s")
             except json.JSONDecodeError as e:
                 logging.warning(f"[LLMClient] Attempt {attempt + 1} — invalid JSON from AIML API: {e}")
             except Exception as e:
                 logging.warning(f"[LLMClient] Attempt {attempt + 1} — error: {e}")
 
             if attempt == max_retries - 1:
-                logging.warning("[LLMClient] ⚠️ All AIML API attempts exhausted. Trying local Gemma model...")
-                # Try local Gemma GGUF model
-                local_result = local_model.generate_json(
-                    system_prompt=system_prompt,
-                    user_prompt=user_prompt,
-                )
-                if local_result:
-                    logging.info("[LLMClient] ✅ Local Gemma model responded successfully.")
-                    return local_result
-                # Final fallback: hardcoded JSON
-                logging.warning("[LLMClient] ⚠️ Local model unavailable. Generating hardcoded backup fallback.")
+                logging.warning("[LLMClient] ⚠️ All AIML API attempts exhausted. Generating hardcoded backup fallback.")
                 return generate_local_fallback(system_prompt, user_prompt, json_schema_dict)
 
             await asyncio.sleep(1)

@@ -13,6 +13,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:khabar/utils/connectivity_service.dart';
 import 'package:khabar/utils/web_helper.dart';
+import 'package:khabar/utils/user_profile_helper.dart';
 
 
 class PhotoVerificationScreen extends StatefulWidget {
@@ -183,6 +184,10 @@ class _PhotoVerificationScreenState extends State<PhotoVerificationScreen> {
       request.fields['description'] = _descriptionController.text.isNotEmpty 
           ? _descriptionController.text 
           : 'Photo report from KHABAR app ($region)';
+      final userId = UserProfileHelper.cachedProfile?['user_id'];
+      if (userId != null) {
+        request.fields['user_id'] = userId;
+      }
 
       final streamed = await request.send();
       final response = await http.Response.fromStream(streamed);
@@ -330,7 +335,7 @@ class _PhotoVerificationScreenState extends State<PhotoVerificationScreen> {
                             ValueListenableBuilder<bool>(
                               valueListenable: ConnectivityService(),
                               builder: (context, isOnline, child) {
-                                if (isOnline && checkGoogleMapsLoaded()) {
+                                 if (ConnectivityService().hasInternet && checkGoogleMapsLoaded()) {
                                   return GoogleMap(
                                     initialCameraPosition: CameraPosition(
                                       target: _markerPosition,

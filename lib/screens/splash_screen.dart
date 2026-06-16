@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:khabar/main.dart';
+import 'package:khabar/screens/auth_screen.dart';
+import 'package:khabar/theme/language_provider.dart';
+import 'package:khabar/utils/user_profile_helper.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -13,18 +16,34 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    Timer(const Duration(milliseconds: 2500), () {
+    _checkAuthAndNavigate();
+  }
+
+  Future<void> _checkAuthAndNavigate() async {
+    // Start loading profile immediately in parallel
+    final profileFuture = UserProfileHelper.loadProfile();
+    
+    // Hold splash screen for at least 2.5 seconds
+    await Future.delayed(const Duration(milliseconds: 2500));
+    final profile = await profileFuture;
+
+    Widget targetScreen = const AuthScreen();
+    if (profile != null) {
+      LanguageProvider().setRegion(profile['region'] ?? 'Islamabad, Capital Territory');
+      targetScreen = const MainScreen();
+    }
+
+    if (mounted) {
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
           transitionDuration: const Duration(milliseconds: 800),
-          pageBuilder: (context, animation, secondaryAnimation) =>
-              const MainScreen(),
+          pageBuilder: (context, animation, secondaryAnimation) => targetScreen,
           transitionsBuilder: (context, animation, secondaryAnimation, child) {
             return FadeTransition(opacity: animation, child: child);
           },
         ),
       );
-    });
+    }
   }
 
   @override

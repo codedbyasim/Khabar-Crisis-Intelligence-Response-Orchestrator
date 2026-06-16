@@ -12,6 +12,8 @@ Android Emulator: `http://10.0.2.2:8000`
 |--------|----------|----------|
 | `GET` | `/` | System Info |
 | `GET` | `/health` | Health Check |
+| `POST` | `/auth/signup` | Authentication |
+| `POST` | `/auth/login` | Authentication |
 | `POST` | `/report/text` | Crisis Reporting |
 | `POST` | `/report/image` | Crisis Reporting |
 | `POST` | `/report/voice` | Crisis Reporting |
@@ -24,7 +26,6 @@ Android Emulator: `http://10.0.2.2:8000`
 | `GET` | `/logs/{id}` | Audit & Logs |
 | `GET` | `/geocode` | Maps |
 | `POST` | `/chat` | AI Chat (Online — Citizen) |
-| `POST` | `/local-chat` | AI Chat (Offline — Citizen) |
 | `POST` | `/admin/chat` | AI Command Assistant (Dashboard) |
 | `GET` | `/live-news` | News Feed |
 
@@ -40,7 +41,7 @@ System status, AI backend info, and all endpoint descriptions.
 {
   "status": "online",
   "system": "KHABAR Crisis Intelligence & Response Orchestrator",
-  "ai_backend": "AIML API (google/gemini-2.5-flash) + Local GGUF Fallback",
+  "ai_backend": "AIML API (google/gemini-2.5-flash)",
   "version": "2.0.0"
 }
 ```
@@ -52,15 +53,68 @@ Quick health check — returns active incident count and server status.
 
 ---
 
+### `POST /auth/signup`
+Creates a new user profile with hashed passwords using PBKDF2.
+
+**Request:**
+```json
+{
+  "email": "citizen@example.com",
+  "password": "securepassword123",
+  "name": "Arsalan Khan",
+  "region": "Islamabad, Capital Territory"
+}
+```
+**Response:**
+```json
+{
+  "success": true,
+  "user": {
+    "user_id": "USR-A8F2BC43",
+    "email": "citizen@example.com",
+    "name": "Arsalan Khan",
+    "region": "Islamabad, Capital Territory"
+  }
+}
+```
+
+---
+
+### `POST /auth/login`
+Authenticates user and returns profile metadata.
+
+**Request:**
+```json
+{
+  "email": "citizen@example.com",
+  "password": "securepassword123"
+}
+```
+**Response:**
+```json
+{
+  "success": true,
+  "user": {
+    "user_id": "USR-A8F2BC43",
+    "email": "citizen@example.com",
+    "name": "Arsalan Khan",
+    "region": "Islamabad, Capital Territory"
+  }
+}
+```
+
+---
+
 ### `POST /report/text`
-Submit a crisis text report. Triggers the full 4-agent pipeline asynchronously in a background task.
+Submit a crisis text report. Triggers the full 4-agent pipeline asynchronously.
 
 **Request:**
 ```json
 {
   "text": "Nullah Lai over flow ho rahi hai, Murree Road Rawalpindi band ho gayi!",
   "lat": 33.6375,
-  "lng": 73.0784
+  "lng": 73.0784,
+  "user_id": "USR-A8F2BC43"
 }
 ```
 **Response:**
@@ -85,6 +139,7 @@ Upload a photo for Vision AI damage assessment.
 | `lat` | float | optional (default: 33.6844) |
 | `lng` | float | optional (default: 73.0479) |
 | `description` | string | optional |
+| `user_id` | string | optional (links report to reporter profile) |
 
 **Response:**
 ```json
@@ -112,11 +167,15 @@ Upload an audio recording for Whisper transcription + crisis analysis.
 | `image` | File (JPEG/PNG) | optional — dual-modal analysis |
 | `lat` | float | optional |
 | `lng` | float | optional |
+| `user_id` | string | optional |
 
 ---
 
 ### `GET /incidents`
-Returns all incidents with P1–P5 priority queue, sorted by severity.
+Returns all incidents or limits incidents to a user. Supports filtering.
+
+**Query Parameters:**
+- `user_id` (string, optional) - If provided, filters cases by creator and returns the **10 most recent cases** sorted chronologically.
 
 **Response:**
 ```json
@@ -129,7 +188,8 @@ Returns all incidents with P1–P5 priority queue, sorted by severity.
       "priority": "P2",
       "status": "PIPELINE_COMPLETE",
       "lat": 33.63,
-      "lng": 73.07
+      "lng": 73.07,
+      "user_id": "USR-A8F2BC43"
     }
   ]
 }
@@ -138,8 +198,7 @@ Returns all incidents with P1–P5 priority queue, sorted by severity.
 ---
 
 ### `DELETE /incidents`
-Clear all incidents from database (both Supabase and in-memory store).  
-Used by the admin dashboard to reset the system state.
+Clear all incidents from database (both Supabase and in-memory store) and reset resources status to available.
 
 **Response:**
 ```json
@@ -217,7 +276,9 @@ Manually trigger a tool action (coordinator / dispatcher mode). Auto-allocates m
 ```
 **action_type options:** `dispatch` | `alert` | `reroute` | `ticket` | `status`
 
-**Effect:** When dispatching, the backend searches the resource inventory for matching available units, sets their status to `deployed`, and links them to `incident_id` via the `assigned_incident` column.
+**Effect:** 
+- When dispatching, the backend sets status to `deployed` and links them to the incident.
+- When resolving or closing (`status` with `RESOLVED` or `CLOSED`), the backend automatically frees all allocated resources back to `available` with `assigned_incident = null`.
 
 ---
 
@@ -247,7 +308,7 @@ Geocode any Pakistan address/landmark using the 4-tier geocoding chain.
 ---
 
 ### `POST /chat`  *(Online — Citizen AI Chat)*
-Multi-turn AI chat with context-aware crisis assistant. Uses AIML API `google/gemini-2.5-flash`.
+Multi-turn AI chat with context-aware crisis assistant. Uses AIML API `google/gemini-2.5-flash` with fallback models like `gpt-4o-mini` and Llama 3 for extreme resilience.
 
 **Request:**
 ```json
@@ -266,37 +327,6 @@ Multi-turn AI chat with context-aware crisis assistant. Uses AIML API `google/ge
   "response": "Aap ke sector G-11 ke qareeb G-11 Fire Station & Rescue Unit hai. Calculated travel time: 5 to 8 minutes (2.8 km)..."
 }
 ```
-
----
-
-### `POST /local-chat`  *(Offline — Local GGUF Model)*
-AI chat powered by local Qwen/Gemma GGUF model. **No internet required.**
-
-**Request:**
-```json
-{
-  "message": "flood emergency mein kya karoon?",
-  "language": "Roman Urdu",
-  "sector": "Faizabad (Rawalpindi)"
-}
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "response": "Sailaab emergency: WASA 1334 call karein. Bijli ka main switch off karein...",
-  "mode": "local_gguf",
-  "model": "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf"
-}
-```
-
-**Mode values:**
-| Mode | Meaning |
-|---|---|
-| `local_gguf` | Local GGUF model responded |
-| `keyword_fallback` | GGUF not loaded, used keyword matching |
-| `error_fallback` | Unexpected error |
 
 ---
 
@@ -335,14 +365,12 @@ Intelligent chatbot for emergency coordinators in the admin dashboard. Reads liv
 | `[EXECUTE: alert, ...]` | Broadcast public warning via FCM |
 | `[EXECUTE: reroute, ...]` | Close road / set traffic detour |
 | `[EXECUTE: ticket, ...]` | Create inter-agency support ticket |
-| `[EXECUTE: status, ...]` | Update incident status |
+| `[EXECUTE: status, ...]` | Update status (Resolving/closing automatically releases resources) |
 | `[EXECUTE: add_resource, ...]` | Register new resource unit |
-| `[EXECUTE: clear_database]` | Clear all incidents from system |
+| `[EXECUTE: clear_database]` | Clear all incidents and reset resources from system |
 
 ---
 
 ### `GET /live-news`
 Real-time news feed from Google News RSS — localized for Islamabad/Rawalpindi.  
 Returns up to 12 recent crisis news items with English + Urdu titles.
-
-**Fallback:** If Google News is unreachable, returns cached items or empty list.

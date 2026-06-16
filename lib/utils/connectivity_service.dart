@@ -17,6 +17,9 @@ class ConnectivityService extends ValueNotifier<bool> {
   bool hasInternet = true;
   bool isBackendOnline = true;
 
+  int _failedBackendChecks = 0;
+  int _failedInternetChecks = 0;
+
   ConnectivityService._internal() : super(true) {
     _startMonitoring();
   }
@@ -54,7 +57,7 @@ class ConnectivityService extends ValueNotifier<bool> {
     try {
       final response = await http
           .get(Uri.parse(ApiConfig.baseUrl))
-          .timeout(const Duration(milliseconds: 3000));
+          .timeout(const Duration(milliseconds: 3500));
       backendOk = response.statusCode == 200;
     } catch (_) {
       backendOk = false;
@@ -94,8 +97,27 @@ class ConnectivityService extends ValueNotifier<bool> {
           } catch (_) {}
         }
       }
+    }
+
+    // Apply consecutive checks logic to prevent flickering
+    if (netOk) {
+      _failedInternetChecks = 0;
     } else {
-      netOk = false;
+      _failedInternetChecks++;
+      // Require 2 consecutive failures to mark as offline
+      if (_failedInternetChecks < 2) {
+        netOk = hasInternet;
+      }
+    }
+
+    if (backendOk) {
+      _failedBackendChecks = 0;
+    } else {
+      _failedBackendChecks++;
+      // Require 2 consecutive failures to mark as offline
+      if (_failedBackendChecks < 2) {
+        backendOk = isBackendOnline;
+      }
     }
 
     hasInternet = netOk;

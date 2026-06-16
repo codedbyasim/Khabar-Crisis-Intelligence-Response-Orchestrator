@@ -110,7 +110,7 @@ Shows a live Flutter map view with:
   - `"Mark SIG-123 as resolved"` → `[EXECUTE: status, ...]`
   - `"Send flood alert to sector G-10"` → `[EXECUTE: alert, ...]`
 - Language support: English, Urdu, Roman Urdu
-- Fallback: Local Qwen GGUF if AIML API is unavailable
+- Fallback: Multi-model resilience retry loop (Gemini -> GPT -> Llama -> Hardcoded JSON)
 
 #### 📊 `CaseTracker.jsx` — Priority Distribution
 - SVG progress rings for P1–P5 incident counts
@@ -145,7 +145,7 @@ GET /logs/{incident_id}
   "incident_id": "SIG-1716223400-TXT",
   "export_time": "2026-06-13T09:20:00Z",
   "system": "KHABAR Crisis Intelligence & Response Orchestrator",
-  "ai_backend": "AIML API (google/gemini-2.5-flash) + Local GGUF Fallback",
+  "ai_backend": "AIML API (google/gemini-2.5-flash) with Multi-Model Fallbacks",
   "agent_pipeline": ["Detection Agent", "Analysis Agent", "Planning Agent", "Execution Agent"],
   "trace_count": 12,
   "traces": [

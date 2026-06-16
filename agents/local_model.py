@@ -26,40 +26,8 @@ _load_attempted = False
 
 def _load_model() -> bool:
     """Load the local Qwen GGUF model. Returns True if successful."""
-    global _llm, _load_attempted
-    if _load_attempted:
-        return _llm is not None
-    _load_attempted = True
-
-    if not os.path.exists(MODEL_PATH):
-        logging.warning(
-            f"[LocalModel] GGUF model not found at: {MODEL_PATH}\n"
-            "Local model fallback will be unavailable."
-        )
-        return False
-
-    try:
-        from llama_cpp import Llama  # type: ignore
-        logging.info(f"[LocalModel] Loading Qwen GGUF from: {MODEL_PATH} ...")
-        _llm = Llama(
-            model_path=MODEL_PATH,
-            n_ctx=2048,          # context window
-            n_threads=4,         # CPU threads
-            n_gpu_layers=0,      # CPU-only (no GPU required)
-            verbose=False,
-        )
-        logging.info("[LocalModel] ✅ Qwen GGUF loaded successfully!")
-        return True
-    except ImportError:
-        logging.warning(
-            "[LocalModel] llama-cpp-python is not installed. "
-            "Run: pip install llama-cpp-python\n"
-            "Local model fallback will be unavailable."
-        )
-        return False
-    except Exception as e:
-        logging.error(f"[LocalModel] Failed to load GGUF model: {e}")
-        return False
+    # Disabled to completely bypass loading GGUF on backend
+    return False
 
 
 def is_available() -> bool:

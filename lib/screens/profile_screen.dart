@@ -1,9 +1,15 @@
 // ignore_for_file: deprecated_member_use
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:khabar/api_config.dart';
+import 'package:khabar/screens/auth_screen.dart';
+import 'package:khabar/screens/incident_tracker_screen.dart';
 import 'package:khabar/theme/app_colors.dart';
 import 'package:khabar/theme/language_provider.dart';
 import 'package:khabar/theme/translations.dart';
+import 'package:khabar/utils/user_profile_helper.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -21,16 +27,55 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   late TextEditingController _nameController;
   String _displayName = 'Ali Khan';
-  final String _displayEmail = 'ali.khan@example.com';
+  String _displayEmail = 'ali.khan@example.com';
   String _selectedAvatarUrl = '';
+  
+  List<dynamic> _myIncidents = [];
+  bool _isLoadingHistory = true;
 
   @override
   void initState() {
     super.initState();
     _selectedLanguage = LanguageProvider().language;
-    _selectedRegion = LanguageProvider().region;
+    
+    // Load local user profile data
+    final profile = UserProfileHelper.cachedProfile;
+    if (profile != null) {
+      _displayName = profile['name'] ?? 'Ali Khan';
+      _displayEmail = profile['email'] ?? 'ali.khan@example.com';
+      _selectedRegion = profile['region'] ?? 'Islamabad, Capital Territory';
+    }
+    
     LanguageProvider().addListener(_onLanguageChanged);
     _nameController = TextEditingController(text: _displayName);
+    _fetchIncidentHistory();
+  }
+
+  Future<void> _fetchIncidentHistory() async {
+    final profile = UserProfileHelper.cachedProfile;
+    if (profile == null) return;
+    final userId = profile['user_id'];
+    if (userId == null) return;
+
+    setState(() => _isLoadingHistory = true);
+    try {
+      final url = '${ApiConfig.baseUrl}/incidents?user_id=$userId';
+      final response = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 8));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (mounted) {
+          setState(() {
+            _myIncidents = data['incidents'] ?? [];
+            _isLoadingHistory = false;
+          });
+        }
+      } else {
+        if (mounted) setState(() => _isLoadingHistory = false);
+      }
+    } catch (e) {
+      debugPrint('Error fetching user incident history: $e');
+      if (mounted) setState(() => _isLoadingHistory = false);
+    }
   }
 
   @override
@@ -566,13 +611,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   elevation: 0,
                 ),
-                onPressed: () {
+                onPressed: () async {
                   setState(() {
                     _displayName = _nameController.text.trim().isNotEmpty
                         ? _nameController.text.trim()
                         : 'Ali Khan';
                   });
+
+                  // Save updated profile locally
+                  final currentProfile = UserProfileHelper.cachedProfile;
+                  if (currentProfile != null) {
+                    final updated = {
+                      'user_id': currentProfile['user_id'] ?? 'USR-UNKNOWN',
+                      'email': currentProfile['email'] ?? 'ali.khan@example.com',
+                      'name': _displayName,
+                      'region': _selectedRegion,
+                    };
+                    await UserProfileHelper.saveProfile(updated);
+                  }
                   
+                  if (!context.mounted) return;
+
                   // Show animated dynamic confirmation dialog
                   showDialog(
                     context: context,
@@ -653,15 +712,150 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
               ),
-            ),
           ),
+        ),
 
-          // Sign Out Button
+        // ── My Incident History Section ──
+        const Divider(),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+          child: Row(
+            children: [
+              const Icon(Icons.history, color: kPrimaryTeal, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                _selectedLanguage == 'اردو' ? 'میری رپورٹ کردہ ہسٹری' : 'MY REPORT HISTORY',
+                style: GoogleFonts.nunito(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                  color: kPrimaryTeal,
+                  letterSpacing: 1.0,
+                ),
+              ),
+            ],
+          ),
+        ),
+        
+        if (_isLoadingHistory)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24.0),
+              child: CircularProgressIndicator(color: kPrimaryTeal),
+            ),
+          )
+        else if (_myIncidents.isEmpty)
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Text(
+                _selectedLanguage == 'اردو' 
+                    ? 'آپ نے ابھی تک کوئی رپورٹ جمع نہیں کروائی ہے۔'
+                    : 'You have not submitted any incident reports yet.',
+                style: GoogleFonts.nunito(color: kTextLight, fontSize: 13),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          )
+        else
+          ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _myIncidents.length,
+            itemBuilder: (context, index) {
+              final incident = _myIncidents[index];
+              final type = incident['incident_type'] ?? 'Emergency';
+              final status = incident['status'] ?? 'PROCESSING';
+              final priority = incident['priority'] ?? 'P5';
+              final id = incident['incident_id'] ?? incident['id'] ?? 'SIG-...';
+              
+              Color statusColor = Colors.orange;
+              if (status == 'RESOLVED') {
+                statusColor = Colors.green;
+              }
+              if (status == 'ASSIGNED') {
+                statusColor = Colors.blue;
+              }
+
+              Color priorityColor = Colors.grey;
+              if (priority == 'P1') {
+                priorityColor = kEmergencyRed;
+              } else if (priority == 'P2') {
+                priorityColor = Colors.orange;
+              } else if (priority == 'P3') {
+                priorityColor = Colors.amber;
+              }
+
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                elevation: 1,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                child: ListTile(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => IncidentTrackerScreen(incidentData: incident),
+                      ),
+                    );
+                  },
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  leading: CircleAvatar(
+                    backgroundColor: priorityColor.withValues(alpha: 0.1),
+                    child: Icon(
+                      type.toString().toLowerCase().contains('fire')
+                          ? Icons.local_fire_department
+                          : type.toString().toLowerCase().contains('flood')
+                              ? Icons.water_damage
+                              : Icons.warning_amber_rounded,
+                      color: priorityColor,
+                    ),
+                  ),
+                  title: Text(
+                    'Case: $type',
+                    style: GoogleFonts.nunito(fontWeight: FontWeight.bold, fontSize: 15, color: kTextDark),
+                  ),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 4),
+                      Text(
+                        'ID: $id',
+                        style: GoogleFonts.nunito(fontSize: 12, color: kTextLight),
+                      ),
+                    ],
+                  ),
+                  trailing: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: statusColor.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      status,
+                      style: GoogleFonts.nunito(
+                        color: statusColor,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        const Divider(),
+
+        // Sign Out Button
           Padding(
             padding: const EdgeInsets.all(24.0),
             child: OutlinedButton(
-              onPressed: () {
-                // Sign out logic placeholder
+              onPressed: () async {
+                final navigator = Navigator.of(context);
+                await UserProfileHelper.clearProfile();
+                navigator.pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (context) => const AuthScreen()),
+                  (route) => false,
+                );
               },
               style: OutlinedButton.styleFrom(
                 side: const BorderSide(color: Colors.grey),

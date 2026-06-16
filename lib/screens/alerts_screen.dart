@@ -360,7 +360,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
           final List<AlertItem> incidentAlerts = [];
           for (var item in list) {
             final String title = item['incident_type'] ?? 'Emergency Report';
-            final String severity = item['priority'] ?? 'P1';
+            final String severity = item['priority'] ?? 'P—';
             final String status = item['status'] ?? 'Active';
             final String locationName = item['location']?['address'] ?? 'Islamabad';
             

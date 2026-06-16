@@ -17,6 +17,7 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:khabar/utils/connectivity_service.dart';
 import 'package:khabar/utils/web_helper.dart';
 import 'package:khabar/theme/language_provider.dart';
+import 'package:khabar/utils/user_profile_helper.dart';
 
 
 class VoiceReportScreen extends StatefulWidget {
@@ -222,6 +223,10 @@ class _VoiceReportScreenState extends State<VoiceReportScreen>
       request.files.add(await http.MultipartFile.fromPath('audio', _recordPath!));
       request.fields['lat'] = _markerPosition.latitude.toString();
       request.fields['lng'] = _markerPosition.longitude.toString();
+      final userId = UserProfileHelper.cachedProfile?['user_id'];
+      if (userId != null) {
+        request.fields['user_id'] = userId;
+      }
       if (_attachedImage != null) {
         request.files.add(await http.MultipartFile.fromPath('image', _attachedImage!.path));
       }
@@ -513,7 +518,7 @@ class _VoiceReportScreenState extends State<VoiceReportScreen>
                               ValueListenableBuilder<bool>(
                                 valueListenable: ConnectivityService(),
                                 builder: (context, isOnline, child) {
-                                  if (isOnline && checkGoogleMapsLoaded()) {
+                                  if (ConnectivityService().hasInternet && checkGoogleMapsLoaded()) {
                                     return GoogleMap(
                                       initialCameraPosition: CameraPosition(
                                         target: _markerPosition,

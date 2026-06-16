@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:http/http.dart' as http;
 import 'package:khabar/api_config.dart';
 import 'package:flutter/material.dart';
@@ -25,6 +26,7 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
   String? _errorMessage;
   bool _isHelpDelivered = false;
   Timer? _pollTimer;
+  List<dynamic> _resourcesList = [];
 
   @override
   void initState() {
@@ -44,6 +46,7 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
     }
     
     _fetchLatestIncident();
+    _fetchResources();
     
     // Start polling every 3 seconds
     _pollTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
@@ -51,9 +54,12 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
         final status = _liveIncidentData!['status'];
         if (status != 'COMPLETED' && status != 'RESOLVED') {
           _pollSpecificIncident(_liveIncidentData!['incident_id']);
+          _fetchResources();
         } else {
           timer.cancel(); // Stop polling once completed
         }
+      } else {
+        _fetchResources();
       }
     });
   }
@@ -126,6 +132,23 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
     }
   }
 
+  Future<void> _fetchResources() async {
+    try {
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/resources'))
+          .timeout(const Duration(seconds: 5));
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (mounted) {
+          setState(() {
+            _resourcesList = data['resources'] ?? [];
+          });
+        }
+      }
+    } catch (e) {
+      // Ignore polling errors silently
+    }
+  }
+
   Map<String, dynamic>? get _effectiveData => _liveIncidentData ?? widget.incidentData;
 
   String get _incidentId {
@@ -148,7 +171,7 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
   String get _priority {
     final data = _effectiveData;
     if (data == null) return 'P—';
-    return data['priority']?.toString() ?? 'P1';
+    return data['priority']?.toString() ?? 'P—';
   }
 
   @override
@@ -206,7 +229,18 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: kEmergencyRed, borderRadius: BorderRadius.circular(4),
+                            color: _priority == 'P1'
+                                ? kEmergencyRed
+                                : _priority == 'P2'
+                                    ? Colors.orange
+                                    : _priority == 'P3'
+                                        ? Colors.amber
+                                        : _priority == 'P4'
+                                            ? Colors.blue
+                                            : _priority == 'P5'
+                                                ? Colors.green
+                                                : Colors.grey,
+                            borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(_priority,
                               style: const TextStyle(
@@ -229,15 +263,6 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
                   if (data['traces'] != null)
                     ..._buildRealTraces(data['traces'] as List),
 
-                  // ── 5. Before / After State (FR-23) ──
-                  if (data['before_state'] != null &&
-                      data['after_state'] != null)
-                    _buildBeforeAfterPanel(
-                      data['before_state'] as Map<String, dynamic>,
-                      data['after_state'] as Map<String, dynamic>,
-                      data['state_diff'] as Map<String, dynamic>?,
-                    ),
-                    
                   // ── 6. Resource Dispatch Confirmation ──
                   // Show when resources have been allocated (active_units present) OR completed
                   if (data['after_state'] != null && 
@@ -260,6 +285,16 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
 
   // ── Dispatch Details Panel ──
   Widget _buildDispatchDetailsPanel(Map<String, dynamic> data) {
+    final incidentLat = _getIncidentLatitude(data) ?? 33.6844;
+    final incidentLng = _getIncidentLongitude(data) ?? 73.0479;
+    final currentIncidentId = data['incident_id']?.toString();
+
+    // Find resources assigned to this incident in the resources list
+    final matchedResources = _resourcesList.where((res) {
+      final assigned = res['assigned_incident']?.toString();
+      return assigned != null && currentIncidentId != null && assigned.toLowerCase() == currentIncidentId.toLowerCase();
+    }).toList();
+
     // Parse active_units from after_state. The schema is Map<String, int>
     // e.g. {"ambulance": 2, "rescue_team": 1}
     final afterState = data['after_state'] as Map<String, dynamic>?;
@@ -272,23 +307,68 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
       if (count > 0) {
         // Friendly resource type name
         final typeName = _friendlyResourceType(resourceType);
-        // ETA based on resource type (realistic simulation)
-        final eta = _etaForResourceType(resourceType);
+        
+        // Find matching resource coordinates and name
+        String resName = typeName;
+        double? resLat;
+        double? resLng;
+
+        // Try to find in matched resources first
+        final assignedRes = matchedResources.firstWhere(
+          (r) => (r['resource_type']?.toString().toLowerCase() == resourceType.toLowerCase() ||
+                  r['type']?.toString().toLowerCase() == resourceType.toLowerCase()),
+          orElse: () => null,
+        );
+
+        if (assignedRes != null) {
+          resName = assignedRes['name']?.toString() ?? typeName;
+          resLat = _getResourceLatitude(assignedRes);
+          resLng = _getResourceLongitude(assignedRes);
+        } else {
+          // Fallback to find any resource of this type in _resourcesList
+          final fallbackRes = _resourcesList.firstWhere(
+            (r) => (r['resource_type']?.toString().toLowerCase() == resourceType.toLowerCase() ||
+                    r['type']?.toString().toLowerCase() == resourceType.toLowerCase()),
+            orElse: () => null,
+          );
+          if (fallbackRes != null) {
+            resName = fallbackRes['name']?.toString() ?? typeName;
+            resLat = _getResourceLatitude(fallbackRes);
+            resLng = _getResourceLongitude(fallbackRes);
+          }
+        }
+
+        // If still null, generate a simulated offset coordinate based on the type hash
+        if (resLat == null || resLng == null) {
+          final offset = 0.02 + (resourceType.hashCode % 10) * 0.005;
+          resLat = incidentLat + offset;
+          resLng = incidentLng - offset;
+        }
+
+        // Calculate distance in km
+        final distanceKm = _calculateDistance(resLat, resLng, incidentLat, incidentLng);
+        // Estimate travel duration
+        final etaStr = _estimateEta(distanceKm, resourceType);
+
         dispatchedItems.add({
-          'type': typeName,
+          'type': resName,
           'units': '$count unit${count > 1 ? 's' : ''}',
-          'eta': eta,
+          'eta': '${distanceKm.toStringAsFixed(1)} km ($etaStr)',
           'icon': _iconNameForResourceType(resourceType),
         });
       }
     });
 
-    // If no units found in after_state, show a fallback
+    // If no units found in after_state, show a fallback dynamic entry
     if (dispatchedItems.isEmpty) {
+      final fallbackLat = incidentLat + 0.025;
+      final fallbackLng = incidentLng - 0.015;
+      final distanceKm = _calculateDistance(fallbackLat, fallbackLng, incidentLat, incidentLng);
+      final etaStr = _estimateEta(distanceKm, 'ambulance');
       dispatchedItems.add({
         'type': 'Emergency Response Unit',
         'units': '1 unit',
-        'eta': '6 Minutes',
+        'eta': '${distanceKm.toStringAsFixed(1)} km ($etaStr)',
         'icon': 'ambulance',
       });
     }
@@ -688,18 +768,6 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
     }
   }
 
-  /// Returns an ETA string based on resource type
-  String _etaForResourceType(String type) {
-    switch (type.toLowerCase()) {
-      case 'ambulance': return '5 Minutes';
-      case 'rescue_team': return '8 Minutes';
-      case 'fire_truck': return '6 Minutes';
-      case 'dewatering_pump': return '15 Minutes';
-      case 'police_unit': return '4 Minutes';
-      case 'helicopter': return '12 Minutes';
-      default: return '7 Minutes';
-    }
-  }
 
   /// Returns icon name key for resource type
   String _iconNameForResourceType(String type) {
@@ -780,160 +848,106 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
     );
   }
 
-  // ── Before / After Panel ──
-  Widget _buildBeforeAfterPanel(
-    Map<String, dynamic> before,
-    Map<String, dynamic> after,
-    Map<String, dynamic>? diff,
-  ) {
-    final changedKeys = (diff?['changed_keys'] as List?)?.cast<String>() ?? [];
-
-    return Padding(
-      padding: const EdgeInsets.only(top: 8.0),
-      child: Card(
-        elevation: 2,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        color: kCardWhite,
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.compare_arrows, color: kPrimaryTeal, size: 20),
-                  const SizedBox(width: 8),
-                  Text('Before → After State',
-                      style: GoogleFonts.nunito(
-                          fontSize: 15, fontWeight: FontWeight.bold, color: kTextDark)),
-                  const Spacer(),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text('✅ Simulation Complete',
-                        style: GoogleFonts.nunito(
-                            fontSize: 11, color: Colors.green, fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Before
-                  Expanded(child: _buildStateBox('BEFORE', before, changedKeys, false)),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 24),
-                    child: Icon(Icons.arrow_forward, color: kPrimaryTeal, size: 28),
-                  ),
-                  // After
-                  Expanded(child: _buildStateBox('AFTER', after, changedKeys, true)),
-                ],
-              ),
-              if (_effectiveData?['generated_alerts'] != null && (_effectiveData!['generated_alerts'] as List).isNotEmpty) ...[
-                const SizedBox(height: 16),
-                const Divider(),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Icon(Icons.campaign, color: Colors.orange, size: 20),
-                    const SizedBox(width: 8),
-                    Text('Public Alerts Generated:',
-                        style: GoogleFonts.nunito(
-                            fontSize: 13, fontWeight: FontWeight.bold, color: Colors.orange.shade700)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
-                  ),
-                  child: Text(
-                    (_effectiveData!['generated_alerts'] as List).first.toString(),
-                    style: GoogleFonts.nunito(fontSize: 12, color: kTextDark),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
+  double? _getIncidentLatitude(Map<String, dynamic> item) {
+    if (item['lat'] != null) {
+      return (item['lat'] as num).toDouble();
+    }
+    if (item['location'] != null && item['location'] is Map) {
+      final loc = item['location'] as Map;
+      if (loc['lat'] != null) {
+        return (loc['lat'] as num).toDouble();
+      }
+      if (loc['latitude'] != null) {
+        return (loc['latitude'] as num).toDouble();
+      }
+    }
+    return null;
   }
 
-  Widget _buildStateBox(
-    String label,
-    Map<String, dynamic> state,
-    List<String> changedKeys,
-    bool isAfter,
-  ) {
-    final rows = <Map<String, String>>[
-      {'key': 'Status', 'val': state['status']?.toString() ?? '—'},
-      {'key': 'Active Units', 'val': (state['active_units'] as Map?)?.length.toString() ?? '0'},
-      {'key': 'Alerts Sent', 'val': state['public_alerts_sent']?.toString() ?? '0'},
-      {'key': 'Roads Closed', 'val': (state['closed_roads'] as List?)?.length.toString() ?? '0'},
-      {'key': 'Tickets', 'val': (state['tickets'] as List?)?.length.toString() ?? '0'},
-    ];
+  double? _getIncidentLongitude(Map<String, dynamic> item) {
+    if (item['lng'] != null) {
+      return (item['lng'] as num).toDouble();
+    }
+    if (item['location'] != null && item['location'] is Map) {
+      final loc = item['location'] as Map;
+      if (loc['lng'] != null) {
+        return (loc['lng'] as num).toDouble();
+      }
+      if (loc['longitude'] != null) {
+        return (loc['longitude'] as num).toDouble();
+      }
+    }
+    return null;
+  }
 
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isAfter
-            ? Colors.green.withValues(alpha: 0.05)
-            : Colors.grey.withValues(alpha: 0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isAfter
-              ? Colors.green.withValues(alpha: 0.3)
-              : Colors.grey.withValues(alpha: 0.2),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: GoogleFonts.nunito(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.2,
-              color: isAfter ? Colors.green : kTextLight,
-            ),
-          ),
-          const SizedBox(height: 8),
-          ...rows.map((r) {
-            final isChanged = isAfter && changedKeys.contains(
-              r['key']!.toLowerCase().replaceAll(' ', '_'),
-            );
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(r['key']!,
-                      style: GoogleFonts.nunito(fontSize: 11, color: kTextLight)),
-                  Text(
-                    r['val']!,
-                    style: GoogleFonts.nunito(
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                      color: isChanged ? Colors.green : kTextDark,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }),
-        ],
-      ),
-    );
+  double? _getResourceLatitude(Map<String, dynamic> r) {
+    final loc = r['location'];
+    if (loc is Map) {
+      if (loc['lat'] != null) return (loc['lat'] as num).toDouble();
+      if (loc['latitude'] != null) return (loc['latitude'] as num).toDouble();
+    }
+    return null;
+  }
+
+  double? _getResourceLongitude(Map<String, dynamic> r) {
+    final loc = r['location'];
+    if (loc is Map) {
+      if (loc['lng'] != null) return (loc['lng'] as num).toDouble();
+      if (loc['longitude'] != null) return (loc['longitude'] as num).toDouble();
+    }
+    return null;
+  }
+
+  double _calculateDistance(double lat1, double lon1, double lat2, double lon2) {
+    const r = 6371; // Earth's radius in km
+    final dLat = _degToRad(lat2 - lat1);
+    final dLon = _degToRad(lon2 - lon1);
+    final a = math.sin(dLat / 2) * math.sin(dLat / 2) +
+        math.cos(_degToRad(lat1)) * math.cos(_degToRad(lat2)) *
+        math.sin(dLon / 2) * math.sin(dLon / 2);
+    final c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a));
+    return r * c;
+  }
+
+  double _degToRad(double deg) {
+    return deg * (math.pi / 180.0);
+  }
+
+  String _estimateEta(double distanceKm, String resourceType) {
+    if (distanceKm <= 0.05) {
+      return "Arrived";
+    }
+    
+    double speedKmh = 40.0;
+    switch (resourceType.toLowerCase()) {
+      case 'ambulance':
+      case 'police_unit':
+        speedKmh = 50.0;
+        break;
+      case 'rescue_team':
+      case 'fire_truck':
+        speedKmh = 45.0;
+        break;
+      case 'dewatering_pump':
+        speedKmh = 30.0;
+        break;
+      case 'helicopter':
+        speedKmh = 180.0;
+        break;
+    }
+    
+    final timeMinutes = (distanceKm / speedKmh) * 60.0;
+    double totalMinutes = timeMinutes;
+    if (resourceType.toLowerCase() != 'helicopter') {
+      totalMinutes += 3.0; // base traffic/dispatch delay
+    }
+    
+    final roundedMinutes = totalMinutes.round();
+    if (roundedMinutes <= 1) {
+      return "1 Minute";
+    } else {
+      return "$roundedMinutes Minutes";
+    }
   }
 
   // ── Real Traces from API ──

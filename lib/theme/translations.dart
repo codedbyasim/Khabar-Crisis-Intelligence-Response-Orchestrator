@@ -210,6 +210,51 @@ class AppTranslations {
       'اردو': 'لاگ آوٹ',
       'Roman Urdu': 'Log Out',
     },
+    'login': {
+      'English': 'Login',
+      'اردو': 'لاگ ان',
+      'Roman Urdu': 'Login',
+    },
+    'signup': {
+      'English': 'Sign Up',
+      'اردو': 'سائن اپ',
+      'Roman Urdu': 'Sign Up',
+    },
+    'email': {
+      'English': 'Email Address',
+      'اردو': 'ای میل ایڈریس',
+      'Roman Urdu': 'Email Address',
+    },
+    'password': {
+      'English': 'Password',
+      'اردو': 'پاس ورڈ',
+      'Roman Urdu': 'Password',
+    },
+    'confirm_password': {
+      'English': 'Confirm Password',
+      'اردو': 'پاس ورڈ کی تصدیق کریں',
+      'Roman Urdu': 'Confirm Password',
+    },
+    'already_have_account': {
+      'English': 'Already have an account? Login',
+      'اردو': 'پہلے سے اکاؤنٹ ہے؟ لاگ ان کریں',
+      'Roman Urdu': 'Pehle se account hai? Login karein',
+    },
+    'dont_have_account': {
+      'English': "Don't have an account? Sign Up",
+      'اردو': 'اکاؤنٹ نہیں ہے؟ سائن اپ کریں',
+      'Roman Urdu': 'Account nahi hai? Sign Up karein',
+    },
+    'creating_account': {
+      'English': 'Creating Account...',
+      'اردو': 'اکاؤنٹ بنایا جا رہا ہے...',
+      'Roman Urdu': 'Account banaya ja raha hai...',
+    },
+    'logging_in': {
+      'English': 'Logging In...',
+      'اردو': 'لاگ ان کیا جا رہا ہے...',
+      'Roman Urdu': 'Logging In...',
+    },
   };
 
   /// Get a translated string for the given [key] and [language].

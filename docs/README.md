@@ -15,8 +15,8 @@ Complete technical documentation for the KHABAR Crisis Intelligence & Response O
 | [action_simulation.md](action_simulation.md) | 7 Antigravity tools — before/after state tracking |
 | [outcome_visualization.md](outcome_visualization.md) | Flutter UI, React dashboard, Chatbot, map visualization, trace export |
 | [fcm_notifications.md](fcm_notifications.md) | Firebase FCM push notifications — setup & bilingual templates |
-| [external_integrations.md](external_integrations.md) | All external APIs — AIML, GGUF models, Supabase, Maps, Weather, News |
-| [local_model.md](local_model.md) | ★ Local GGUF models (Qwen + Gemma) — offline inference documentation |
+| [external_integrations.md](external_integrations.md) | All external APIs — AIML, Supabase, Maps, Weather, News |
+| [local_model.md](local_model.md) | ★ Offline AI Assistant — 100% on-device client-side offline intelligence |
 
 ---
 
@@ -52,7 +52,7 @@ flutter run                   # Android emulator/device
 | Layer | Technology |
 |---|---|
 | Primary LLM | AIML API → `google/gemini-2.5-flash` (OpenAI-compatible) |
-| Offline LLM | Qwen2.5-0.5B-Instruct GGUF + Gemma 4-E2B GGUF via `llama-cpp-python` |
+| Offline LLM | 100% on-device local keyword matching engine (Urdu, English, Roman Urdu) |
 | Backend | Python FastAPI (`api_server.py`) + Uvicorn on port 8000 |
 | Web Dashboard | Vite + React 18 + Leaflet.js on port 8001 |
 | Mobile App | Flutter 3.16+ / Dart |
@@ -74,7 +74,6 @@ flutter run                   # Android emulator/device
 | `POST /action/execute` | Manually dispatch resources or execute actions |
 | `POST /admin/chat` | **AI Command Assistant** — natural language coordinator commands |
 | `POST /chat` | Online citizen AI chat (AIML API) |
-| `POST /local-chat` | **Offline citizen AI chat** (Local GGUF) |
 | `GET /logs/{id}` | Export agent trace log as JSON |
 | `GET /docs` | Swagger interactive API documentation |
 
@@ -92,9 +91,7 @@ flutter run                   # Android emulator/device
          AIML API                  7 Antigravity Tools
     (google/gemini-2.5-flash)      (Dispatch, Alert, Reroute...)
          ↓ [fallback]                     ↓
-    Local GGUF Model           Supabase DB + Firebase FCM
-         ↓ [fallback]
-    Hardcoded JSON
+    Hardcoded JSON             Supabase DB + Firebase FCM
                  ↓
     React Dashboard (port 8001) — Live Map, Chatbot, Resource Manager
     Flutter Mobile App          — Citizen reporting, Incident tracking
@@ -105,13 +102,16 @@ flutter run                   # Android emulator/device
 ## LLM Fallback Chain (DO NOT BREAK)
 
 ```
-AIML API (3 manual retries, 45s timeout each)
-     ↓
-Local Qwen GGUF  (agents/local_model.py — Qwen2.5-0.5B)
-     ↓
-Local Gemma GGUF (agents/local_model.py — Gemma 4-E2B, if available)
-     ↓
-Hardcoded JSON    (generate_local_fallback in llm_client.py)
+AIML API (Multi-model resilience retry loop)
+  1. Primary Model:   google/gemini-2.5-flash  (timeout: 20 seconds)
+          ↓ [times out or errors]
+  2. Backup Model 1:  gpt-4o-mini               (timeout: 15 seconds)
+          ↓ [times out or errors]
+  3. Backup Model 2:  meta-llama/Llama-3-8b-instruct-maas (timeout: 15 seconds)
+
+     ↓ [all attempts exhausted]
+
+Hardcoded Structured JSON Fallback (last resort)
 ```
 
 **Note:** OpenAI SDK built-in retries are disabled (`max_retries=0`) across all client instances. Only our manual retry loop controls retry behavior.

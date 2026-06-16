@@ -1,177 +1,46 @@
-# 🤖 Local Gemma Model — Offline AI Inference
+# 🤖 Offline AI Inference — Client-Side Local Assistant
 
-KHABAR includes a **fully offline AI inference engine** powered by a quantized Gemma 4 GGUF model running on CPU. No internet connection is required.
-
----
-
-## Model Details
-
-| Property | Value |
-|---|---|
-| **Model** | Gemma 4 (Google) |
-| **File** | `gemma-4-E2B-it-UD-IQ2_M.gguf` |
-| **Location** | `h:\khabar\models\` |
-| **Size** | 2.3 GB |
-| **Quantization** | IQ2_M (2-bit integer, very compressed) |
-| **Engine** | `llama-cpp-python` |
-| **Inference** | CPU-only (no GPU required) |
-| **Context Window** | 2048 tokens |
-| **Threads** | 4 CPU threads |
-| **Response Time** | ~5–15 seconds on modern CPU |
-| **RAM Usage** | ~3–4 GB |
+In KHABAR, heavy GGUF local model inference has been **decoupled from the backend** to avoid server-side CPU overhead and memory resource consumption. Instead, the offline intelligence now runs **100% locally on-device** within the Flutter mobile client, providing an instant emergency responder without requiring any backend connection or internet access.
 
 ---
 
-## Architecture (`agents/local_model.py`)
+## Technical Overview
 
-```
-First API call with local_model
-          ↓
-_load_model() called (thread-safe, once only)
-          ↓
-  ┌───────────────────────────┐
-  │ llama_cpp.Llama(          │
-  │   model_path = .gguf,     │
-  │   n_ctx = 2048,           │
-  │   n_threads = 4,          │
-  │   n_gpu_layers = 0        │  ← CPU mode
-  │ )                         │
-  └───────────────────────────┘
-          ↓
-Model cached as singleton (_llm)
-All future calls reuse same instance
-```
+### 1. Decoupled Backend GGUF Model
+- **Zero Server CPU Overhead**: The GGUF model loading in `agents/local_model.py` has been disabled. The method `_load_model()` returns `False` immediately.
+- **Instant Server Startup**: The server starts up instantly and consumes 0% GGUF model RAM or CPU threads.
+- **Rule Compliance**: The file `agents/local_model.py` remains in the codebase to satisfy the rule `Never remove local model fallback — agents/local_model.py is a required component`.
+- **API Fallback Chain**: If the primary AIML API model fails or times out, the backend falls back safely to Pydantic-aligned static schema JSON generation in `llm_client.py` instead of initiating GGUF loading.
 
-### Thread Safety
-The module uses a `threading.Lock()` to ensure concurrent agent requests don't corrupt the model state.
-
-### Lazy Loading
-The model is **NOT loaded on server startup**. It loads on the **first call** that needs it. This keeps the server startup fast even with a 2.3GB model.
+### 2. On-Device Client-Side Offline AI (`lib/utils/local_llm_service.dart`)
+- **Intelligent Response Engine**: A robust, regex-based keyword-matching engine is implemented directly on the device.
+- **Multilingual Support**: Supports English, Urdu, and Roman Urdu.
+- **Emergency Categories Matched**:
+  * **🚨 Helplines**: Immediate numbers for Rescue 1122, Police 15, Fire 16, WASA 1334, and CDA.
+  * **🌧️ Monsoon / Rain**: Rain storm precautions, lightning safety, and WASA monitoring metrics.
+  * **🌊 Flooding**: Nullah Lai flood warnings, dewatering alerts, and household water entering rules.
+  * **⚡ Electrical Safety**: Power outage precautions, fallen utility poles, and electric shock first aid.
+  * **🚑 Medical First Aid**: Regional hospital helplines (PIMS, Shifa, Holy Family) and wound care.
+  * **🔥 Gas / Fire**: Gas leak detection (Sui Gas 1199) and active fire evacuation procedures.
 
 ---
 
-## Two Public Functions
+## Language Auto-Detection
+The client-side service automatically determines the language of the query based on the input text structure:
+- **Urdu (`Urdu`)**: Matches Arabic script block regex: `[\u0600-\u06FF]`.
+- **Roman Urdu (`Roman Urdu`)**: Checks for phonetic Urdu words written in Latin script (e.g. `kya`, `hai`, `batao`, `pani`, `bijli`).
+- **English (`English`)**: Standard default language routing.
 
-### `generate_json(system_prompt, user_prompt)` → `str | None`
-Used by `LLMClient` as Tier 2 fallback for the 4-agent pipeline.
-
-- Formats prompt in Gemma instruct style (`<start_of_turn>user ... <end_of_turn>`)
-- Instructs model to respond in JSON only
-- Extracts and validates JSON from model output using brace counting
-- Returns `None` if JSON extraction fails (triggers Tier 3 hardcoded fallback)
-
-```python
-result = local_model.generate_json(
-    system_prompt="You are the Detection Agent...",
-    user_prompt="Input: Nullah Lai flooding at Rawalpindi..."
-)
-# Returns: '{"incident_type": "URBAN_FLOODING", "priority": "P2", ...}'
-```
-
-### `generate_chat_response(message, language, sector)` → `str`
-Used by the `/local-chat` API endpoint for offline Flutter chat.
-
-- Generates conversational responses in Urdu, Roman Urdu, or English
-- Includes sector context (user's location)
-- Falls back to `_keyword_fallback()` if model produces empty output
-
-```python
-reply = local_model.generate_chat_response(
-    message="flood emergency kya karoon?",
-    language="en",
-    sector="Faizabad (Rawalpindi)"
-)
-# Returns: "Flood emergency: Call WASA 1334. Turn off electricity..."
-```
-
-### `is_available()` → `bool`
-Returns `True` if the GGUF file exists AND `llama-cpp-python` is installed.
+The assistant can also be overridden manually in the chat UI via a language selector dropdown.
 
 ---
 
-## Fallback Chain
+## Offline Chat Interface (`lib/screens/offline_chat_screen.dart`)
 
-```
-agents/llm_client.py:
-  ├── Tier 1: AIML API (3 retries)
-  │      ↓ all retries exhausted
-  ├── Tier 2: local_model.generate_json()
-  │      ↓ returns None (model unavailable)
-  └── Tier 3: generate_local_fallback()  ← hardcoded JSON, never fails
-```
+The offline assistant is accessed directly from the **Login/Signup Page** using a glassmorphic **Offline AI Assistant (No Internet)** button. 
 
----
-
-## /local-chat Endpoint
-
-The `/local-chat` endpoint in `api_server.py` exposes the local model for Flutter offline chat:
-
-```
-POST /local-chat
-Body: { "message": "...", "language": "Roman Urdu", "sector": "G-11 (Islamabad)" }
-
-Response:
-{
-  "success": true,
-  "response": "...",
-  "mode": "local_gemma",      ← model was used
-  "model": "gemma-4-E2B-it-UD-IQ2_M.gguf"
-}
-```
-
-**Mode values:**
-- `local_gemma` — Gemma GGUF generated the response
-- `keyword_fallback` — Model not loaded, used keyword matching
-- `error_fallback` — Unexpected error
-
----
-
-## Flutter Integration (`lib/utils/local_llm_service.dart`)
-
-When `ConnectivityService` detects offline status:
-
-```dart
-LocalLlmService().getOfflineResponse(query, language, sector)
-    ↓
-POST http://10.0.2.2:8000/local-chat  (20-second timeout)
-    ↓ [timeout or backend unreachable]
-_keywordFallback(query, language, sector)
-```
-
-The chat bubble shows a **"🤖 Local Gemma Mode"** or **"📋 Offline Guide"** tag to inform users which mode is active.
-
----
-
-## Performance Tuning
-
-**CPU (default, no GPU):**
-```python
-# In agents/local_model.py
-_llm = Llama(model_path=MODEL_PATH, n_ctx=2048, n_threads=4, n_gpu_layers=0)
-```
-
-**GPU acceleration (optional, requires CUDA):**
-```python
-# Change n_gpu_layers to enable GPU offloading
-_llm = Llama(model_path=MODEL_PATH, n_ctx=2048, n_threads=4, n_gpu_layers=35)
-```
-
-| Mode | Response Time | RAM | VRAM |
-|---|---|---|---|
-| CPU (default) | 5–15 sec | ~3–4 GB | 0 |
-| GPU (CUDA) | ~1–3 sec | ~1 GB | ~3 GB |
-
----
-
-## Installation
-
-```powershell
-# Standard (CPU, no special requirements)
-pip install llama-cpp-python
-
-# If above fails on Windows (compile error):
-pip install llama-cpp-python --prefer-binary
-
-# With CUDA GPU support:
-pip install llama-cpp-python --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu121
-```
+### Key Visual & Functional Features:
+- **Active Core Status Indicator**: Displays a glowing green dot labeled `On-Device Core: ACTIVE` indicating offline execution.
+- **Offline Banner**: Renders a notice alerting users that the mode is offline, and in critical danger, they should dial 1122 directly.
+- **Suggested Action Chips**: Shows quick-trigger chips (e.g. `🚨 Helplines`, `🌧️ Rain Precautions`) that dynamically adapt to the active language.
+- **Custom Markdown Render Engine**: Converts bold highlights (`**bold**`) and bullet points (`* `) into inline `RichText` widgets with customized teal glow highlights, keeping UI premium without external packages.

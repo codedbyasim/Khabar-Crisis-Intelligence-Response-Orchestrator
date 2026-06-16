@@ -1,5 +1,5 @@
 # 🚨 KHABAR (خبر) — Crisis Intelligence & Response Orchestrator (CIRO)
-### AIML API (google/gemini-2.5-flash) | FastAPI + Flutter + React Dashboard**
+### AIML API (Gemini, GPT, Llama) | FastAPI + Flutter + React Dashboard
 
 ---
 
@@ -79,34 +79,30 @@ The pipeline consists of **four sequential AI agents** that share a `SharedMemor
 - Maps planning actions to 7 Antigravity tools from `tool_system.py`
 - Tracks exact `before_state` → `after_state` system transitions
 - Sends **real FCM push notifications** via Firebase Admin SDK (bilingual Urdu + English)
-- Writes final incident record to Supabase PostgreSQL
+- Writes final incident record to Supabase PostgreSQL, linked to the reporter's `user_id`
 - **Auto-allocates** matching database resources — updates `assigned_incident` field on dispatched units
 
 ---
 
 ## 🤖 5. AI Backend — LLM Chain
 
-KHABAR uses a **3-tier LLM fallback chain** to ensure 100% uptime:
+KHABAR uses a **2-tier LLM fallback chain** with multi-model resilience on the backend to ensure 100% uptime:
 
 ```
-Tier 1: AIML API  (google/gemini-2.5-flash — OpenAI-compatible)
-         max_retries=0 (SDK disabled) + 3 manual asyncio.wait_for retries × 45s
-         ↓  [all 3 attempts exhausted]
-Tier 2: Local Qwen GGUF  (Qwen2.5-0.5B-Instruct-Q4_K_M.gguf — CPU, ~380 MB)
-         ↓  [Qwen unavailable]
-Tier 2b: Local Gemma GGUF  (gemma-4-E2B-it-UD-IQ2_M.gguf — CPU, 2.3 GB)
-         ↓  [model unavailable]
-Tier 3: Hardcoded Structured JSON  (last resort, never crashes)
+Tier 1: AIML API (Multi-model resilience retry loop)
+  1. Primary Model:   google/gemini-2.5-flash  (timeout: 20 seconds)
+          ↓ [times out or errors]
+  2. Backup Model 1:  gpt-4o-mini               (timeout: 15 seconds)
+          ↓ [times out or errors]
+  3. Backup Model 2:  meta-llama/Llama-3-8b-instruct-maas (timeout: 15 seconds)
+
+    ↓ [all attempts exhausted]
+
+Tier 2: Hardcoded Structured JSON Fallback
+  Pydantic schema-aligned mock models. Never fails to respond.
 ```
 
-| Tier | File | Requires Internet |
-|------|------|:-----------------:|
-| AIML API (`google/gemini-2.5-flash`) | `agents/llm_client.py` | ✅ Yes |
-| Local Qwen GGUF (380 MB) | `agents/local_model.py` | ❌ No |
-| Local Gemma GGUF (2.3 GB) | `agents/local_model.py` | ❌ No |
-| Hardcoded JSON | `agents/llm_client.py` | ❌ No |
-
-> **Note:** The OpenAI SDK's built-in auto-retry is explicitly disabled (`max_retries=0`) in all client files. Only our manual `asyncio.wait_for` retry loop controls retry behavior, preventing double-retry log spam.
+*Note on Local Model Decoupling:* To protect server resources, local model loading on the backend has been bypassed (`local_model.py`'s GGUF inference features are disabled at runtime). If the primary API fails, it jumps directly to the hardcoded JSON layer.
 
 ---
 
@@ -119,7 +115,7 @@ A **premium light-glass command center** built with Vite + React 18, running on 
 | Component | Description |
 |---|---|
 | 🗺️ **MapWidget** | Live Leaflet map (CartoDB Positron tiles) — incident markers + resource/crew markers |
-| 📦 **ResourceManager** | Real-time resource table — status, type, assigned incident |
+| 📦 **ResourceManager** | Real-time resource table — status, type, quantity, assigned incident |
 | 🤖 **AgentPanel** | 4-agent pipeline detail + allocated resource badges per incident |
 | 💬 **AI Chatbot** | Floating Command Assistant — natural language coordinator commands via `POST /admin/chat` |
 | 📊 **CaseTracker** | P1–P5 priority distribution progress rings |
@@ -130,7 +126,7 @@ A **premium light-glass command center** built with Vite + React 18, running on 
 **Admin Chatbot Commands (natural language → AI parses → executes):**
 ```
 "Dispatch Rescue 1122 to SIG-123"           → [EXECUTE: dispatch, ...]
-"Mark SIG-123 as resolved"                  → [EXECUTE: status, ...]
+"Mark SIG-123 as resolved"                  → [EXECUTE: status, ...] (Automatically releases resources back to available)
 "Send flood alert to Sector G-10"           → [EXECUTE: alert, ...]
 "Close Murree Road and reroute via N5"      → [EXECUTE: reroute, ...]
 "Add ambulance unit at PIMS"                → [EXECUTE: add_resource, ...]
@@ -146,23 +142,20 @@ Built in Flutter/Dart with a premium dark-themed design system:
 | Screen | File | Function |
 |---|---|---|
 | Dashboard / Map | `map_screen.dart` | Live incidents map with polyline detours |
-| Text Report | `text_signal_screen.dart` | Multi-language text crisis submission |
-| Photo Report | `photo_verification_screen.dart` | Camera → Vision AI analysis |
-| Voice Report | `voice_report_screen.dart` | Audio → Whisper transcription + optional photo |
-| Incident Detail | `incident_tracker_screen.dart` | Agent trace timeline, before/after state |
-| AI Chat | `ai_chat_screen.dart` | Online chat (AIML API) + Offline (Local GGUF) |
+| Login / Signup | `auth_screen.dart` | Glassmorphic login gate with on-device AI launcher |
+| Offline Chatbot | `offline_chat_screen.dart` | 100% offline emergency AI chat assistant |
+| Text Report | `text_signal_screen.dart` | Multi-language text crisis submission (stamps User ID) |
+| Photo Report | `photo_verification_screen.dart` | Camera → Vision AI analysis (stamps User ID) |
+| Voice Report | `voice_report_screen.dart` | Audio → Whisper transcription (stamps User ID) |
+| Incident Detail | `incident_tracker_screen.dart` | Agent trace timeline, dynamically calculated resource distance and ETA |
+| AI Chat | `ai_chat_screen.dart` | Online citizen AI chat (raises connection error when offline) |
 | Live Alerts | `alerts_screen.dart` | Real-time FCM alerts feed |
 
 ### **Offline Mode (No Internet)**
-When device is offline, `LocalLlmService` calls:
-1. `POST /local-chat` → Backend uses **Local Qwen/Gemma GGUF** (no internet needed)
-2. If backend is also down → Keyword-based hardcoded responses
-
-### **Platform URL Auto-Detection** (`lib/api_config.dart`)
-```dart
-Web (Chrome)       → http://127.0.0.1:8000
-Android Emulator   → http://10.0.2.2:8000
-```
+When a citizen has no internet connection, they can launch the **Offline AI Assistant** directly from the Login/Signup page.
+- Runs 100% on the device without checking backend server or network sockets.
+- Employs regex-based keyword parsing inside `LocalLlmService` to return localized safety guidelines and rescue hotline phone numbers.
+- Supports English, Urdu script, and Roman Urdu with auto-detection and custom markdown rendering.
 
 ---
 
@@ -174,48 +167,39 @@ Swagger Docs: `http://127.0.0.1:8000/docs`
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | `GET` | `/` | System status & endpoint list |
-| `GET` | `/health` | Health check + active incident count |
-| `POST` | `/report/text` | Submit text crisis report (Urdu/English/Roman Urdu) |
+| `GET` | `/health` | Health check |
+| `POST` | `/auth/signup` | Register new user profile |
+| `POST` | `/auth/login` | Authenticate user and return profile |
+| `POST` | `/report/text` | Submit text crisis report (stamps User ID) |
 | `POST` | `/report/image` | Submit photo for Vision damage assessment |
 | `POST` | `/report/voice` | Submit audio for Speech transcription |
-| `GET` | `/incidents` | All active incidents with P1–P5 priority queue |
-| `DELETE` | `/incidents` | Clear all incidents (admin reset) |
+| `GET` | `/incidents` | All active incidents (accepts `user_id` query to return user's 10 latest cases) |
+| `DELETE` | `/incidents` | Clear all incidents & reset resources (admin reset) |
 | `GET` | `/incident/{id}` | Single incident + full 4-agent trace |
 | `GET` | `/resources` | Resource inventory with `assigned_incident` status |
 | `POST` | `/resources/add` | Register a new resource unit |
-| `POST` | `/action/execute` | Manual tool execution (coordinator mode) |
+| `POST` | `/action/execute` | Manual tool execution (resolving or closing releases resources) |
 | `GET` | `/logs/{id}` | Export full agent trace as JSON download |
 | `GET` | `/geocode` | Geocode address via Google Maps / OSM Nominatim |
-| `POST` | `/chat` | Multi-turn citizen AI chat (online — AIML API) |
-| `POST` | `/local-chat` | **Offline citizen AI chat (Local GGUF — no internet)** |
+| `POST` | `/chat` | Multi-turn citizen AI chat (online — AIML API with fallbacks) |
 | `POST` | `/admin/chat` | **Dashboard AI Command Assistant** (coordinator commands) |
 | `GET` | `/live-news` | Real-time Google News RSS feed |
-
-### **Key Request/Response Examples**
-
-**POST `/report/text`**
-```json
-Request:  { "text": "Nullah Lai over flow ho rahi hai Rawalpindi!", "lat": 33.6375, "lng": 73.0784 }
-Response: { "success": true, "incident_id": "SIG-1716223400-TXT", "status": "PROCESSING", "poll_url": "/incident/SIG-..." }
-```
-
-**POST `/admin/chat`** *(Dashboard Chatbot)*
-```json
-Request:  { "message": "Dispatch Rescue 1122 to SIG-123", "history": [] }
-Response: { "success": true, "response": "[EXECUTE: dispatch, ...]\nDispatching 2 units...", "command_executed": {...} }
-```
-
-**POST `/local-chat`** *(Offline)*
-```json
-Request:  { "message": "flood emergency kya karoon?", "language": "Roman Urdu" }
-Response: { "success": true, "response": "...", "mode": "local_gguf", "model": "Qwen2.5-0.5B-Instruct-Q4_K_M.gguf" }
-```
 
 ---
 
 ## 💾 9. Database Schema (Supabase PostgreSQL)
 
 ```sql
+-- User Accounts Table
+CREATE TABLE IF NOT EXISTS users (
+    user_id        VARCHAR(255) PRIMARY KEY,
+    email          VARCHAR(255) UNIQUE NOT NULL,
+    password_hash  VARCHAR(255) NOT NULL,
+    name           VARCHAR(255) NOT NULL,
+    region         VARCHAR(255) NOT NULL,
+    created_at     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Core Incidents Table
 CREATE TABLE IF NOT EXISTS incidents (
     incident_id    VARCHAR(255) PRIMARY KEY,
@@ -231,6 +215,7 @@ CREATE TABLE IF NOT EXISTS incidents (
     after_state    JSONB,
     state_diff     JSONB,
     public_alerts_sent INTEGER DEFAULT 0,
+    user_id        VARCHAR(255),  -- Links to users table
     created_at     TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -242,7 +227,7 @@ CREATE TABLE IF NOT EXISTS resources (
     quantity           INTEGER DEFAULT 1,
     status             VARCHAR(50)  DEFAULT 'available',
     location           JSONB,                    -- {"lat": float, "lng": float}
-    assigned_incident  VARCHAR(255)              -- auto-created if missing via self-healing ALTER TABLE
+    assigned_incident  VARCHAR(255)              -- links to active incident ID
 );
 ```
 
@@ -253,19 +238,17 @@ CREATE TABLE IF NOT EXISTS resources (
 | Layer | Technology |
 |---|---|
 | **AI Orchestration** | Python 3.12, FastAPI, Pydantic v2, CrewAI |
-| **Primary LLM** | AIML API → `google/gemini-2.5-flash` (OpenAI-compatible AsyncOpenAI) |
-| **Offline LLM** | Qwen2.5-0.5B GGUF + Gemma 4-E2B GGUF via `llama-cpp-python` (CPU) |
-| **Vision AI** | AIML API Vision (OpenAI-compatible, base64 image encoding) |
+| **Primary LLM** | AIML API → `google/gemini-2.5-flash` with `gpt-4o-mini` and Llama 3 fallbacks |
+| **Offline AI** | 100% On-Device client-side regex matcher (Urdu, English, Roman Urdu) |
+| **Vision AI** | AIML API Vision (OpenAI-compatible) |
 | **Speech AI** | OpenAI Whisper API (via AIML API endpoint) |
 | **Mobile Client** | Flutter 3.16+, Dart |
-| **Web Dashboard** | Vite + React 18 + Leaflet.js (CartoDB Positron tiles) |
-| **Maps** | Google Maps Platform (Geocoding + Distance Matrix) + OSM Nominatim |
-| **Database** | Supabase Cloud PostgreSQL (psycopg2-binary) + In-Memory fallback |
+| **Web Dashboard** | Vite + React 18 + Leaflet.js (CartoDB tiles) |
+| **Database** | Supabase Cloud PostgreSQL + In-Memory fallback |
 | **Push Alerts** | Firebase Cloud Messaging v1 (firebase-admin SDK) |
-| **Weather** | Open-Meteo API (free, no API key required) |
+| **Weather** | Open-Meteo API |
 | **Traffic** | TomTom Traffic Flow API |
-| **News Feed** | Google News RSS (free, no API key required) |
-| **Geocoding** | Google Maps Geocoding API + Local Pakistan dict + OSM Nominatim fallback |
+| **News Feed** | Google News RSS |
 
 ---
 
@@ -273,7 +256,7 @@ CREATE TABLE IF NOT EXISTS resources (
 
 ```
 h:\khabar\
-├── api_server.py              ← FastAPI backend — all 17 endpoints
+├── api_server.py              ← FastAPI backend — all endpoints
 ├── dashboard_server.py        ← Serves built React dashboard (port 8001)
 ├── seed_resources.py          ← One-time DB seeder for resource inventory
 ├── requirements.txt           ← Python dependencies
@@ -281,25 +264,19 @@ h:\khabar\
 │
 ├── agents/                    ← All backend AI agents & services
 │   ├── crew_orchestrator.py   ← KhabarCrewOrchestrator — CrewAI sequential pipeline
-│   ├── llm_client.py          ← AIML API client + 3-tier fallback chain (max_retries=0)
-│   ├── local_model.py         ← Local Qwen/Gemma GGUF loader (llama-cpp-python)
+│   ├── llm_client.py          ← AIML API client + multi-model fallback retry loop
+│   ├── local_model.py         ← Local GGUF loader (preserved for rules, disabled at runtime)
 │   ├── detection_agent.py     ← Stage 1: Classify & verify
 │   ├── analysis_agent.py      ← Stage 2: Impact & severity analysis
-│   ├── planning_agent.py      ← Stage 3: NDMA RAG + resource planning
+│   ├── planning_agent.py      ← Stage 3: NDMA SOPs RAG & resource planning
 │   ├── execution_agent.py     ← Stage 4: Tool execution + state diff
 │   ├── tool_system.py         ← 7 Antigravity tools (dispatch, alert, etc.)
-│   ├── firestore_db.py        ← Supabase DB adapter + in-memory fallback + self-healing
+│   ├── firestore_db.py        ← Supabase DB adapter + in-memory fallback
 │   ├── alert_service.py       ← Firebase FCM v1 push notifications
-│   ├── maps_service.py        ← Google Maps + OSM geocoding & ETAs
-│   ├── gemini_vision.py       ← AIML Vision API (damage assessment, max_retries=0)
-│   ├── gemini_speech.py       ← AIML Whisper API (audio transcription, max_retries=0)
-│   ├── automated_ingestion.py ← Background weather & traffic polling
-│   ├── knowledge_base_data.py ← Pakistan NDMA SOP vector knowledge base
-│   └── .env                   ← API keys (gitignored — never commit)
-│
-├── models/                    ← Local GGUF Models (gitignored — large binaries)
-│   ├── Qwen2.5-0.5B-Instruct-Q4_K_M.gguf   (~380 MB — fast, primary fallback)
-│   └── gemma-4-E2B-it-UD-IQ2_M.gguf         (2.3 GB — larger context)
+│   ├── maps_service.py        ← Google Maps geocoding & hospital search
+│   ├── gemini_vision.py       ← AIML Vision API (damage assessment)
+│   ├── gemini_speech.py       ← AIML Whisper API (audio transcription)
+│   └── automated_ingestion.py ← Background weather & traffic polling
 │
 ├── dashboard/                 ← React Web Dashboard (Vite + React 18)
 │   ├── src/
@@ -307,28 +284,23 @@ h:\khabar\
 │   │   ├── index.css          ← Light-glass premium CSS design system
 │   │   └── components/
 │   │       ├── Chatbot.jsx        ← AI Command Assistant (POST /admin/chat)
-│   │       ├── MapWidget.jsx      ← Leaflet map — incidents + resources
 │   │       ├── ResourceManager.jsx ← Real-time resource + assigned_incident table
-│   │       ├── AgentPanel.jsx     ← Pipeline detail + allocated resource badges
-│   │       ├── CaseTracker.jsx    ← Priority distribution progress rings
-│   │       ├── StatsGrid.jsx      ← KPI summary cards
-│   │       ├── AlertsPanel.jsx    ← FCM alert history
-│   │       ├── SituationSummary.jsx ← AI situation overview
-│   │       └── Sidebar.jsx        ← Navigation
+│   │       └── MapWidget.jsx      ← Live map
 │   └── package.json
 │
 ├── lib/                       ← Flutter mobile app
 │   ├── main.dart
-│   ├── api_config.dart        ← Auto-detects Web vs Android Emulator URL
-│   ├── screens/               ← All 7 UI screens
+│   ├── api_config.dart        ← Base URL configurations
+│   ├── screens/               
+│   │   ├── auth_screen.dart           ← Login/Signup view with offline AI entry
+│   │   └── offline_chat_screen.dart   ← 100% offline chat assistant screen
 │   └── utils/
-│       ├── local_llm_service.dart     ← Calls /local-chat → keyword fallback
-│       └── connectivity_service.dart  ← Network connectivity detection
+│       ├── local_llm_service.dart     ← On-device offline keyword parser
+│       └── connectivity_service.dart  ← Network connectivity checks
 │
-├── docs/                      ← Full technical documentation (9 files)
-├── skills/                    ← Engineering workflow skills
-├── assets/                    ← App images & fonts
-└── web/                       ← Flutter web build target assets
+├── docs/                      ← Technical documentation
+├── skills/                    ← Engineering workflows
+└── web/                       ← Web build configurations
 ```
 
 ---
@@ -340,7 +312,6 @@ h:\khabar\
 cd h:\khabar
 $env:PYTHONIOENCODING="utf-8"
 python api_server.py             # → http://127.0.0.1:8000
-                                 # → Swagger: http://127.0.0.1:8000/docs
 
 # 2. Start the React Dashboard (optional)
 cd h:\khabar\dashboard
@@ -351,15 +322,5 @@ python dashboard_server.py       # → http://127.0.0.1:8001
 
 # 3. Run the Flutter Mobile App
 cd h:\khabar
-flutter run -d chrome            # Web browser
-flutter run                      # Connected Android device / emulator
+flutter run                      # Run on connected device or emulator
 ```
-
----
-
-## 📝 13. Core Platform Assumptions
-1. **Map Corridor Simulations:** Detour corridors are visually simulated using coordinate boundaries relative to the incident center.
-2. **Emergency Dispatch Capacity:** Baseline resource capacity seeded via `seed_resources.py`. On exhaustion, Planning Agent auto-escalates to `STANDBY`.
-3. **Human-in-the-Loop:** P3–P5 events in production require manual dispatcher confirmation via the admin dashboard chatbot before real dispatches.
-4. **Local Model Performance:** Qwen GGUF runs on CPU (~3–8 sec/response). Gemma GGUF (~10–20 sec/response). GPU acceleration can be enabled via `n_gpu_layers` in `agents/local_model.py`.
-5. **Auto-Polling:** Background weather/traffic polling is disabled by default to conserve API quota. Incidents can be manually reported through the API or Flutter app at any time.

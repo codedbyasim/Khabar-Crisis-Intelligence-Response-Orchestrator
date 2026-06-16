@@ -6,7 +6,6 @@ import 'package:khabar/api_config.dart';
 import 'package:khabar/theme/app_colors.dart';
 import 'package:khabar/theme/language_provider.dart';
 import 'package:khabar/utils/connectivity_service.dart';
-import 'package:khabar/utils/local_llm_service.dart';
 
 class ChatMessage {
   final String text;
@@ -99,35 +98,14 @@ class _AiChatScreenState extends State<AiChatScreen> {
     _messageController.clear();
     _scrollToBottom();
 
-    // ── Check Connectivity for Offline Mode ──
+    // ── Check Connectivity ──
     bool isOnline = ConnectivityService().value;
     if (!isOnline) {
-      try {
-        final localReply = await LocalLlmService().getOfflineResponse(
-          text,
-          LanguageProvider().language,
-          LanguageProvider().region,
-        );
-        if (mounted) {
-          setState(() {
-            _messages.add(ChatMessage(
-              text: localReply,
-              isUser: false,
-              timestamp: DateTime.now(),
-              isOffline: true,
-            ));
-          });
-        }
-      } catch (e) {
-        _showError("Offline model error: ${e.toString()}");
-      } finally {
-        if (mounted) {
-          setState(() {
-            _isSending = false;
-          });
-        }
-        _scrollToBottom();
-      }
+      _showError("No internet connection. Please check your network and try again.");
+      setState(() {
+        _isSending = false;
+      });
+      _scrollToBottom();
       return;
     }
 
