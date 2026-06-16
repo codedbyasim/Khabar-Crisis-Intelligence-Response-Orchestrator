@@ -485,18 +485,7 @@ class _AlertsScreenState extends State<AlertsScreen> {
                         child: Material(
                           color: Colors.transparent,
                           child: InkWell(
-                            onTap: () {
-                              if (alert.url != null) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: Text(
-                                      'Opening report: ${alert.title}',
-                                    ),
-                                    backgroundColor: kPrimaryTeal,
-                                  ),
-                                );
-                              }
-                            },
+                            onTap: () => _showAlertSummary(context, alert),
                             child: Padding(
                               padding: const EdgeInsets.all(16.0),
                               child: Row(
@@ -604,6 +593,135 @@ class _AlertsScreenState extends State<AlertsScreen> {
                 },
               ),
       ),
+    );
+  }
+
+  Future<void> _showAlertSummary(BuildContext context, AlertItem alert) async {
+    final currentLang = LanguageProvider().language;
+    
+    // Show a loading dialog first
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return Center(
+          child: Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const CircularProgressIndicator(color: kPrimaryTeal),
+          ),
+        );
+      },
+    );
+
+    String summaryText = "";
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/alert/summary'),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "title": alert.title,
+          "location": alert.location,
+          "time": alert.time,
+          "language": currentLang,
+        }),
+      ).timeout(const Duration(seconds: 8));
+
+      // Close the loading dialog
+      if (context.mounted) {
+        if (Navigator.canPop(context)) Navigator.of(context).pop();
+      }
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] == true) {
+          summaryText = data['summary'];
+        }
+      }
+    } catch (_) {
+      // Close the loading dialog if it timed out or errored
+      if (context.mounted) {
+        if (Navigator.canPop(context)) Navigator.of(context).pop();
+      }
+    }
+
+    if (summaryText.isEmpty) {
+      if (currentLang == 'اردو') {
+        summaryText = "معذرت، اس الرٹ کا خلاصہ حاصل کرنے میں دشواری پیش آ رہی ہے۔";
+      } else if (currentLang == 'Roman Urdu') {
+        summaryText = "Maazrat, is alert ka summary hasil karne mein masla ho raha hai.";
+      } else {
+        summaryText = "Sorry, could not generate a summary for this alert at this time.";
+      }
+    }
+
+    // Show the custom safety/summary dialog
+    if (!context.mounted) return;
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          icon: const Icon(Icons.psychology, color: kPrimaryTeal, size: 40),
+          title: Text(
+            currentLang == 'اردو'
+                ? "اے آئی الرٹ رپورٹ خلاصہ"
+                : currentLang == 'Roman Urdu'
+                    ? "AI Alert Report Summary"
+                    : "AI Alert Intelligence",
+            style: GoogleFonts.nunito(fontWeight: FontWeight.bold, fontSize: 18),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  currentLang == 'اردو' ? alert.urduTitle : alert.title,
+                  style: GoogleFonts.nunito(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14.5,
+                    color: kTextDark,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  "📍 ${alert.location} • ${alert.time}",
+                  style: const TextStyle(fontSize: 12, color: Colors.grey),
+                ),
+                const SizedBox(height: 16),
+                const Divider(),
+                const SizedBox(height: 12),
+                Text(
+                  summaryText,
+                  style: GoogleFonts.nunito(
+                    fontSize: 14,
+                    height: 1.45,
+                    color: kTextDark.withValues(alpha: 0.95),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: Text(
+                currentLang == 'اردو' ? "ٹھیک ہے" : "Dismiss",
+                style: GoogleFonts.nunito(
+                  fontWeight: FontWeight.bold,
+                  color: kPrimaryTeal,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 

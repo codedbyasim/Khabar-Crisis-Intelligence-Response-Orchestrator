@@ -803,6 +803,85 @@ async def export_logs(incident_id: str):
     )
 
 
+class AlertSummaryRequest(BaseModel):
+    title: str
+    location: str
+    time: str = ""
+    language: str = "English"
+
+
+@app.post("/alert/summary")
+async def alert_summary(request: AlertSummaryRequest):
+    """
+    Generate an intelligent AI summary for a selected alert.
+    """
+    try:
+        target_lang = request.language or "English"
+        language_rule = ""
+        if target_lang == "اردو":
+            language_rule = "You MUST write the response ONLY in pure Urdu using Arabic script (اردو رسم الخط). Do NOT write in English or Roman Urdu under any circumstances."
+        elif target_lang == "Roman Urdu":
+            language_rule = "You MUST write the response ONLY in Roman Urdu (Urdu written in Latin/English script, e.g., 'Yeh alert barish ke baray mein hai. WASA team active hai'). Do NOT write in Urdu script or English under any circumstances."
+        else:
+            language_rule = "You MUST write the response ONLY in English. Do NOT write in Urdu script or Roman Urdu under any circumstances."
+
+        system_prompt = f"""You are Khabar CIRO Alert Summarizer.
+Your goal is to take an emergency alert/news title and location and generate a concise, reassuring, and helpful summary of the situation (2 to 3 sentences maximum).
+Include what safety precautions citizens should take.
+
+ALERT DETAILS:
+- Title: {request.title}
+- Location: {request.location}
+- Time: {request.time}
+
+RULES:
+1. RESPONSE LANGUAGE: {language_rule}
+2. Keep the summary under 60-70 words maximum. Be direct, comforting, and clear.
+3. Plain text only. Do not use raw markdown symbols or double asterisks (**).
+"""
+        client = orchestrator.detection_agent.llm_client.client
+        model = orchestrator.detection_agent.llm_client.model
+        
+        response = await client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"Summarize this alert: {request.title} at {request.location}"}
+            ],
+            temperature=0.3,
+        )
+        
+        return {
+            "success": True,
+            "summary": response.choices[0].message.content.strip()
+        }
+    except Exception as e:
+        logging.error(f"Error generating alert summary: {e}")
+        fallback_msg = f"Alert at {request.location}: {request.title}. Please be careful and follow safety regulations."
+        try:
+            import local_model
+            lang_code = "en"
+            if target_lang in ("ur", "اردو", "Urdu"):
+                lang_code = "ur"
+                fallback_msg = f"ہنگامی الرٹ: {request.location} پر {request.title}۔ براہ کرم محتاط رہیں اور حفاظتی ہدایات پر عمل کریں۔"
+            elif target_lang in ("roman", "Roman Urdu"):
+                lang_code = "roman"
+                fallback_msg = f"Emergency Alert: {request.location} par {request.title}. Bara-e-meharbani ehtiyat bartein."
+                
+            if local_model.is_available():
+                prompt = f"Summarize this alert: {request.title} at {request.location}"
+                reply = local_model.generate_chat_response(prompt, lang_code, request.location)
+                if reply:
+                    fallback_msg = reply
+        except Exception:
+            pass
+            
+        return {
+            "success": True,
+            "summary": fallback_msg
+        }
+
+
 class ChatRequest(BaseModel):
     message: str
     history: list[dict[str, str]] = []
