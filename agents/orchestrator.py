@@ -136,9 +136,37 @@ class KhabarOrchestrator:
 
     # ── Dashboard push (Firestore) ──
     def push_to_firestore(self, memory: IncidentMemory):
+        # Resolve lat/lng dynamically
+        lat = None
+        lng = None
+        if memory.raw_signal and memory.raw_signal.metadata:
+            lat = memory.raw_signal.metadata.get("lat")
+            lng = memory.raw_signal.metadata.get("lng")
+            
+        if (lat is None or lng is None) and memory.detection_output and memory.detection_output.detected_location:
+            loc = memory.detection_output.detected_location
+            lat = getattr(loc, "lat", None) or getattr(loc, "latitude", None)
+            lng = getattr(loc, "lng", None) or getattr(loc, "longitude", None)
+            
+        if lat is None or lng is None:
+            try:
+                area = memory.detection_output.detected_location.area if (memory.detection_output and memory.detection_output.detected_location) else None
+                city = memory.detection_output.detected_location.city if (memory.detection_output and memory.detection_output.detected_location) else None
+                loc_text = f"{area or ''} {city or ''}".strip()
+                if loc_text:
+                    geo = self.maps.geocode_location(loc_text)
+                    lat, lng = geo["lat"], geo["lng"]
+            except Exception:
+                pass
+                
+        if lat is None: lat = 33.6844
+        if lng is None: lng = 73.0479
+
         payload = {
             "incident_id": memory.incident_id,
             "status": memory.system_state.status,
+            "lat": float(lat),
+            "lng": float(lng),
             "active_units": memory.system_state.active_units,
             "closed_roads": memory.system_state.closed_roads,
             "public_alerts_sent": memory.system_state.public_alerts_sent,
@@ -152,6 +180,10 @@ class KhabarOrchestrator:
             loc_dict = memory.detection_output.detected_location.dict()
             loc_dict["is_verified"] = getattr(memory.detection_output, "is_verified", True)
             loc_dict["verification_reason"] = getattr(memory.detection_output, "verification_reason", "Verified")
+            loc_dict["lat"] = float(lat)
+            loc_dict["lng"] = float(lng)
+            loc_dict["latitude"] = float(lat)
+            loc_dict["longitude"] = float(lng)
             payload.update({
                 "incident_type": memory.detection_output.incident_type.value,
                 "severity": memory.detection_output.severity.value,
@@ -167,6 +199,68 @@ class KhabarOrchestrator:
             payload["generated_alerts"] = memory.execution_output.generated_alerts
 
         self.firestore.save_incident(memory.incident_id, payload)
+        
+        # Sync deployed/active units to resources database table
+        status = memory.system_state.status
+        active_units = memory.system_state.active_units
+        if status in ("REJECTED", "PIPELINE_COMPLETE"):
+            active_units = {}
+        self._sync_resources_to_database(memory.incident_id, active_units)
+
+    def _sync_resources_to_database(self, incident_id: str, active_units: dict):
+        try:
+            if not active_units and active_units is not None:
+                # If active_units is empty, we must release all resources assigned to this incident
+                resources = self.firestore.get_resources()
+                for r in resources:
+                    if r.get("assigned_incident") == incident_id:
+                        self.firestore.update_resource_status(r["resource_id"], "available", None)
+                return
+
+            if not active_units:
+                return
+            
+            # Fetch current resource inventory
+            resources = self.firestore.get_resources()
+            
+            # For each resource type in active_units
+            for rtype_key, required_count in active_units.items():
+                if not required_count:
+                    required_count = 0
+                required_count = int(required_count)
+                
+                # Normalize key names
+                target_type = rtype_key.lower()
+                if target_type == "rescue":
+                    target_type = "rescue_team"
+                elif target_type == "pump":
+                    target_type = "dewatering_pump"
+                    
+                # Find all resources of this type
+                type_resources = []
+                for r in resources:
+                    curr_type = (r.get("resource_type") or r.get("type") or "").lower()
+                    if curr_type == target_type or target_type in curr_type or curr_type in target_type:
+                        type_resources.append(r)
+                        
+                # Count how many are already assigned to this incident
+                assigned_units = [r for r in type_resources if r.get("assigned_incident") == incident_id]
+                already_assigned_count = len(assigned_units)
+                
+                if already_assigned_count < required_count:
+                    # We need to deploy more!
+                    to_deploy = required_count - already_assigned_count
+                    available_units = [r for r in type_resources if (r.get("status") == "available" or not r.get("assigned_incident")) and r.get("assigned_incident") != incident_id]
+                    for r in available_units[:to_deploy]:
+                        self.firestore.update_resource_status(r["resource_id"], "deployed", incident_id)
+                elif already_assigned_count > required_count:
+                    # We have too many deployed! Release some.
+                    to_release = already_assigned_count - required_count
+                    for r in assigned_units[:to_release]:
+                        self.firestore.update_resource_status(r["resource_id"], "available", None)
+                        
+        except Exception as e:
+            logging.error(f"Error synchronizing resources to database for incident {incident_id}: {e}")
 
     # ── Full 4-agent pipeline ──
     async def process_incident(self, raw_signal: RawCrisisSignal):
