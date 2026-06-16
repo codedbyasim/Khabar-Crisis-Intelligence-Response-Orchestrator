@@ -146,15 +146,36 @@ class _MapScreenState extends State<MapScreen> {
         final List<MapIncident> loaded = [];
 
         for (var item in list) {
-          final loc = item['location'];
-          if (loc == null || loc['lat'] == null || loc['lng'] == null) continue;
-          
-          final double lat = (loc['lat'] as num).toDouble();
-          final double lng = (loc['lng'] as num).toDouble();
+          double? lat;
+          double? lng;
+
+          // 1. Check top-level lat/lng (for Firestore/live incidents)
+          if (item['lat'] != null && item['lng'] != null) {
+            lat = (item['lat'] as num).toDouble();
+            lng = (item['lng'] as num).toDouble();
+          }
+          // 2. Check inside location map
+          else if (item['location'] != null && item['location'] is Map) {
+            final loc = item['location'] as Map;
+            if (loc['lat'] != null) {
+              lat = (loc['lat'] as num).toDouble();
+            } else if (loc['latitude'] != null) {
+              lat = (loc['latitude'] as num).toDouble();
+            }
+
+            if (loc['lng'] != null) {
+              lng = (loc['lng'] as num).toDouble();
+            } else if (loc['longitude'] != null) {
+              lng = (loc['longitude'] as num).toDouble();
+            }
+          }
+
+          if (lat == null || lng == null) continue;
           final String title = item['incident_type'] ?? 'Emergency Report';
           final String priority = item['priority'] ?? 'P1';
           final String status = item['status'] ?? 'Active';
-          final String address = loc['address'] ?? 'Islamabad';
+          final locObj = item['location'];
+          final String address = (locObj is Map) ? (locObj['address'] ?? 'Islamabad') : 'Islamabad';
           final String id = item['incident_id'] ?? 'KH-000';
 
           final List<ResponseStep> steps = [];

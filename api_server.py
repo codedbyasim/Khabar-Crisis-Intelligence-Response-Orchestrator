@@ -452,10 +452,23 @@ async def get_incidents():
             "traces": memory.traces,
             "trace_count": len(memory.traces),
         }
+        # Get coordinates for active in-memory incident
+        lat, lng = 33.6844, 73.0479
+        if memory.raw_signal and memory.raw_signal.metadata:
+            lat = float(memory.raw_signal.metadata.get("lat") or 33.6844)
+            lng = float(memory.raw_signal.metadata.get("lng") or 73.0479)
+        
+        entry.update({
+            "lat": lat,
+            "lng": lng,
+        })
+
         if memory.detection_output:
             loc_dict = memory.detection_output.detected_location.model_dump()
             loc_dict["is_verified"] = getattr(memory.detection_output, "is_verified", True)
             loc_dict["verification_reason"] = getattr(memory.detection_output, "verification_reason", "Verified")
+            loc_dict["lat"] = lat
+            loc_dict["lng"] = lng
             entry.update({
                 "incident_type": memory.detection_output.incident_type.value,
                 "severity": memory.detection_output.severity.value,
