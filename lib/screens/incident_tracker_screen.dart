@@ -5,6 +5,7 @@ import 'package:khabar/api_config.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:khabar/theme/app_colors.dart';
+import 'package:khabar/theme/language_provider.dart';
 
 class IncidentTrackerScreen extends StatefulWidget {
   final Map<String, dynamic>? incidentData;
@@ -240,10 +241,13 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
                   // ── 6. Resource Dispatch Confirmation ──
                   // Show when resources have been allocated (active_units present) OR completed
                   if (data['after_state'] != null && 
-                      ((data['after_state'] as Map<String, dynamic>?)?['active_units'] as Map?)?.isNotEmpty == true)
-                    _buildDispatchDetailsPanel(data)
-                  else if (data['status'] == 'COMPLETED' || _status.toLowerCase().contains("complete"))
+                      ((data['after_state'] as Map<String, dynamic>?)?['active_units'] as Map?)?.isNotEmpty == true) ...[
                     _buildDispatchDetailsPanel(data),
+                    if (!_isHelpDelivered)
+                      _buildSafetyTipsPanel(data),
+                  ] else if (data['status'] == 'COMPLETED' || _status.toLowerCase().contains("complete")) ...[
+                    _buildDispatchDetailsPanel(data),
+                  ],
                 ],
                 const SizedBox(height: 24),
               ],
@@ -352,6 +356,255 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
                   style: GoogleFonts.nunito(fontSize: 14, color: kTextDark),
                 ),
               ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Safety Tips Panel ──
+  Widget _buildSafetyTipsPanel(Map<String, dynamic> data) {
+    final String currentLang = LanguageProvider().language;
+    final String incidentType = (data['incident_type'] ?? data['source'] ?? '').toString().toLowerCase();
+
+    // Define safety tips map
+    final Map<String, List<String>> tipsMapEn = {
+      'flood': [
+        'Move to higher ground or upper floors immediately.',
+        'Disconnect all electrical appliances to prevent electric shocks.',
+        'Do NOT walk, swim, or drive through flood waters.',
+        'Keep emergency kits and essential documents close at hand.',
+      ],
+      'fire': [
+        'Stay low to the ground to avoid inhaling toxic smoke.',
+        'Evacuate the building immediately if safe; do NOT use elevators.',
+        'Cover your nose and mouth with a wet cloth if possible.',
+        'If trapped, close doors, seal vents, and signal for help.',
+      ],
+      'accident': [
+        'Keep the victim calm and do not move them unless in immediate danger.',
+        'If bleeding is present, apply direct pressure with a clean cloth.',
+        'Turn off ignition switches of involved vehicles to prevent fire.',
+        'Clear the path for arriving emergency vehicles.',
+      ],
+      'medical_emergency': [
+        'Check if the victim is breathing; perform CPR if necessary and trained.',
+        'If there is bleeding, apply steady pressure with a clean dressing.',
+        'Keep the patient warm, quiet, and as comfortable as possible.',
+        'Do NOT give food or drink if they are semi-conscious or choking.',
+      ],
+      'structural_damage': [
+        'Evacuate the structure immediately if you hear cracking or feel tremors.',
+        'Stay clear of windows, glass, and hanging light fixtures.',
+        'Cover your head and neck with your arms or take shelter under a sturdy table.',
+        'Avoid touching loose bricks, sagging beams, or down wires.',
+      ],
+      'hazardous_spill': [
+        'Stay upwind and uphill to avoid toxic vapors or chemical runoff.',
+        'Evacuate the area immediately; cover skin and eyes.',
+        'Do NOT touch or step in spilled chemical materials.',
+        'Do NOT light matches or use phones if flammable vapor is suspected.',
+      ],
+      'power_outage': [
+        'Unplug electrical appliances to prevent damage from power surges.',
+        'Keep refrigerator doors closed to preserve food as long as possible.',
+        'Use flashlights instead of candles to avoid fire hazards.',
+        'Never run backup generators indoors due to carbon monoxide risk.',
+      ],
+      'default': [
+        'Stay calm and reassure those around you.',
+        'Follow instructions from local emergency management authorities.',
+        'Keep your mobile phone charged and limit calls to save battery.',
+        'Stay in a safe location unless it becomes unsafe to remain.',
+      ]
+    };
+
+    final Map<String, List<String>> tipsMapUr = {
+      'flood': [
+        'فوری طور پر اونچی جگہ یا بالائی منزل پر منتقل ہو جائیں۔',
+        'بجلی کے جھٹکے سے بچنے کے لیے تمام برقی آلات بند کر دیں۔',
+        'سیلابی پانی میں چلنے، تیرنے یا گاڑی چلانے سے گریز کریں۔',
+        'ہنگامی کٹ اور ضروری دستاویزات کو اپنے پاس رکھیں۔',
+      ],
+      'fire': [
+        'زہریلے دھوئیں سے بچنے کے لیے زمین کے قریب (نیچے) رہیں۔',
+        'اگر محفوظ ہو تو فوری طور پر عمارت سے باہر نکلیں، لفٹ کا استعمال نہ کریں۔',
+        'اگر ممکن ہو تو اپنے ناک اور منہ کو گیلے کپڑے سے ڈھانپیں۔',
+        'اگر پھنس جائیں تو دروازے بند کریں، سوراخوں کو ڈھانپیں اور اشارہ کریں۔',
+      ],
+      'accident': [
+        'متاثرہ شخص کو پرسکون رکھیں، جب تک فوری خطرہ نہ ہو انہیں حرکت نہ دیں۔',
+        'اگر خون بہہ رہا ہو تو صاف کپڑے سے براہ راست دباؤ ڈالیں۔',
+        'آگ لگنے سے بچنے کے لیے گاڑیوں کے انجن بند کر دیں۔',
+        'ہنگامی گاڑیوں کے لیے راستہ صاف رکھیں۔',
+      ],
+      'medical_emergency': [
+        'چیک کریں کہ آیا شخص سانس لے رہا ہے؛ اگر تربیت یافتہ ہوں تو سی پی آر کریں۔',
+        'خون بہنے کی صورت میں زخم پر دباؤ ڈالیں۔',
+        'مریض کو گرم، پرسکون اور آرام دہ حالت میں رکھیں۔',
+        'اگر وہ نیم بے ہوش ہوں تو انہیں کھانا یا پینا نہ دیں۔',
+      ],
+      'structural_damage': [
+        'اگر دراڑیں پڑنے کی آواز آئے یا جھٹکے محسوس ہوں تو فوراً عمارت خالی کریں۔',
+        'کھڑکیوں، شیشوں اور لٹکی ہوئی روشنیوں سے دور رہیں۔',
+        'اپنے سر اور گردن کو بازوؤں سے ڈھانپیں یا کسی مضبوط میز کے نیچے پناہ لیں۔',
+        'ڈھیلی اینٹوں، جھکے ہوئے شہتیروں یا بجلی کے تاروں کو چھونے سے گریز کریں۔',
+      ],
+      'hazardous_spill': [
+        'زہریلے بخارات سے بچنے کے لیے ہوا کے مخالف رخ اور اونچی جگہ پر رہیں۔',
+        'فوری طور پر علاقہ خالی کریں؛ جلد اور آنکھوں کو ڈھانپیں۔',
+        'گرے ہوئے مواد کو چھونے یا اس میں قدم رکھنے سے گریز کریں۔',
+        'اگر آتش گیر بخارات کا شبہ ہو تو ماچس نہ جلائیں یا فون استعمال نہ کریں۔',
+      ],
+      'power_outage': [
+        'بجلی کے اچانک جھٹکے سے بچنے کے لیے برقی آلات کو ان پلگ کر دیں۔',
+        'خوراک کو محفوظ رکھنے کے لیے فریج کے دروازے بند رکھیں۔',
+        'آگ کے خطرات سے بچنے کے لیے موم بتیوں کے بجائے فلیش لائٹ استعمال کریں۔',
+        'کاربن مونو آکسائیڈ کے خطرے کے باعث گھر کے اندر جنریٹر استعمال نہ کریں۔',
+      ],
+      'default': [
+        'پرسکون رہیں اور اپنے آس پاس کے لوگوں کو حوصلہ دیں۔',
+        'مقامی ہنگامی انتظامی حکام کی ہدایات پر عمل کریں۔',
+        'اپنے موبائل فون کو چارج رکھیں اور بیٹری بچانے کے لیے غیر ضروری کالز نہ کریں۔',
+        'جب تک غیر محفوظ نہ ہو، اپنی جگہ پر رہیں۔',
+      ]
+    };
+
+    final Map<String, List<String>> tipsMapRoman = {
+      'flood': [
+        'Fauri taur par oonchi jagah ya oopri manzil par chalein jayein.',
+        'Bijli ke jhatkay se bachnay ke liye appliances ko unplug karein.',
+        'Flooded paani mein chalnay, tairnay ya gaari chalana se bachein.',
+        'Emergency kit aur zaroori documents apne paas rakhein.',
+      ],
+      'fire': [
+        'Zehrelay dhuwan se bachnay ke liye zameen ke qareeb (jhuk kar) rahein.',
+        'Agar safe ho to foran building se bahar nikal jayein, lift use na karein.',
+        'Mumkin ho to naak aur munh ko geelay kapray se cover karein.',
+        'Agar phans jayein to darwazay band rakhein aur madad ke liye ishara karein.',
+      ],
+      'accident': [
+        'Affected shakhs ko calm rakhein, jab tak khatra na ho unhein move na karein.',
+        'Agar khoon beh raha ho to saaf kapray se direct pressure dalein.',
+        'Aag lagne se bachne ke liye gaariyon ke engine band kar dein.',
+        'Emergency vehicles ke liye rasta clear rakhein.',
+      ],
+      'medical_emergency': [
+        'Check karein ke shakhs saans le raha hai ya nahi.',
+        'Khoon behnay ki soorat mein zakham par pressure dalein.',
+        'Patient ko garam, calm aur comfortable rakhein.',
+        'Neem-behoshi ki soorat mein unhein khana ya peena mat dein.',
+      ],
+      'structural_damage': [
+        'Agar dararain parhne ki aawaz aaye to foran building khaali karein.',
+        'Khirkiyon, sheeshay aur hanging light fixtures se door rahein.',
+        'Apne sar aur gardan ko baazuon se cover karein ya mazboot table ke neeche jayein.',
+        'Dheeli eenton, jhukay beams ya bijli ki wires ko touch mat karein.',
+      ],
+      'hazardous_spill': [
+        'Zehrelay vapors se bachne ke liye hawa ke oppsite rukh aur oonchi jagah rahein.',
+        'Foran area khaali karein, skin aur eyes ko cover karein.',
+        'Gire huway material ko touch mat karein aur na hi us mein qadam rakhein.',
+        'Flammable vapor ka shak ho to machis ya phones ka use mat karein.',
+      ],
+      'power_outage': [
+        'Bijli ke jhatke se bachne ke liye appliances ko unplug kar dein.',
+        'Food ko kharab hone se bachane ke liye fridge ke doors band rakhein.',
+        'Aag lagne se bachne ke liye candles ke bajaye flashlights use karein.',
+        'Carbon monoxide ke khatre ki wajah se generator ghar ke andar use na karein.',
+      ],
+      'default': [
+        'Calm rahein aur aas paas ke logon ko hosla dein.',
+        'Local emergency authorities ki instructions par amal karein.',
+        'Apne mobile phone ko charge rakhein aur calls ko limit karein battery bachane ke liye.',
+        'Jab tak unsafe na ho, apni jagah par hi rahein.',
+      ]
+    };
+
+    // Determine target map
+    Map<String, List<String>> targetMap = tipsMapEn;
+    String headerText = "🚨 WHAT TO DO UNTIL HELP ARRIVES:";
+    
+    if (currentLang == 'اردو') {
+      targetMap = tipsMapUr;
+      headerText = "🚨 مدد پہنچنے تک کیا کریں:";
+    } else if (currentLang == 'Roman Urdu') {
+      targetMap = tipsMapRoman;
+      headerText = "🚨 MADAD POHANCHNAY TAK KYA KAREIN:";
+    }
+
+    // Try finding tips for incident type, fallback to default
+    List<String> tips = targetMap[incidentType] ?? targetMap['default']!;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16.0),
+      child: Card(
+        elevation: 3,
+        shadowColor: Colors.orange.withValues(alpha: 0.15),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: Colors.orange.shade300.withValues(alpha: 0.5),
+            width: 1.5,
+          ),
+        ),
+        color: Colors.orange.shade50.withValues(alpha: 0.25),
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.security_outlined,
+                    color: Colors.orange.shade800,
+                    size: 22,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      headerText,
+                      style: GoogleFonts.nunito(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orange.shade900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              ...tips.map((tip) => Padding(
+                padding: const EdgeInsets.only(bottom: 10.0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      margin: const EdgeInsets.only(top: 5),
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade800,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        tip,
+                        style: GoogleFonts.nunito(
+                          fontSize: 13,
+                          height: 1.4,
+                          fontWeight: FontWeight.w600,
+                          color: kTextDark.withValues(alpha: 0.9),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )),
             ],
           ),
         ),
