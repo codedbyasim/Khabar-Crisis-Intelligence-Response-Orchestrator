@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:khabar/main.dart';
-import 'package:khabar/theme/app_colors.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -31,9 +30,23 @@ class _SplashScreenState extends State<SplashScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: kBackgroundLight,
       body: Stack(
         children: [
+          // Premium Dark Gradient Background (makes the white logo text stand out beautifully)
+          Positioned.fill(
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    Color(0xFF0F2D2A), // Rich dark teal
+                    Color(0xFF071413), // Deep near-black teal
+                  ],
+                ),
+              ),
+            ),
+          ),
           // Geometric Watermark Background
           Positioned.fill(
             child: CustomPaint(painter: GeometricPatternPainter()),
@@ -42,7 +55,7 @@ class _SplashScreenState extends State<SplashScreen> {
           Center(
             child: Container(
               padding: const EdgeInsets.all(16.0),
-              constraints: const BoxConstraints(maxWidth: 220, maxHeight: 220),
+              constraints: const BoxConstraints(maxWidth: 240, maxHeight: 240),
               child: Image.asset(
                 'assets/Khabar Logo.png',
                 fit: BoxFit.contain,
@@ -59,7 +72,7 @@ class GeometricPatternPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = kPrimaryTeal.withValues(alpha: 0.05)
+      ..color = Colors.white.withValues(alpha: 0.025)
       ..strokeWidth = 1.0
       ..style = PaintingStyle.stroke;
 
