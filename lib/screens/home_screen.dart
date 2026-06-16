@@ -186,8 +186,8 @@ class _HomeScreenState extends State<HomeScreen>
                   _buildTodayNewsSection(),
                   const SizedBox(height: 24),
 
-                  // Removed "Track My Help Requests" as per user request
-                  _buildStatsRow(),
+                  // System Integrity Status Card
+                  _buildSystemHealthCard(),
                   const SizedBox(height: 100),
                 ],
               ),
@@ -328,64 +328,111 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
 
-  // ── Stats Row ──
-  Widget _buildStatsRow() {
-    return Row(
-      children: [
-        Expanded(
-          child: _buildStatCard(
-            Icons.map_outlined,
-            '14 km',
-            AppTranslations.t('coverage_area', _selectedLanguage),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _buildStatCard(
-            Icons.groups_outlined,
-            '4',
-            AppTranslations.t('active_agents', _selectedLanguage),
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _buildStatCard(
-            Icons.timer_outlined,
-            '< 3s',
-            AppTranslations.t('response_time', _selectedLanguage),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatCard(IconData icon, String value, String label) {
+  // ── System Health Integrity Card ──
+  Widget _buildSystemHealthCard() {
     return Card(
-      elevation: 1,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+        padding: const EdgeInsets.all(16.0),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: kPrimaryTeal, size: 22),
-            const SizedBox(height: 8),
-            Text(
-              value,
-              style: GoogleFonts.nunito(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: kPrimaryTeal,
-              ),
+            Row(
+              children: [
+                const Icon(Icons.security_outlined, color: kPrimaryTeal, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  AppTranslations.t('system_integrity', _selectedLanguage),
+                  style: GoogleFonts.nunito(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: kTextDark,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: GoogleFonts.nunito(fontSize: 11, color: kTextLight),
-              textAlign: TextAlign.center,
+            const SizedBox(height: 16),
+            // API Connection Status Row
+            ValueListenableBuilder<bool>(
+              valueListenable: ConnectivityService(),
+              builder: (context, isOnline, child) {
+                return _buildHealthStatusRow(
+                  AppTranslations.t('api_connected', _selectedLanguage),
+                  isOnline,
+                );
+              },
+            ),
+            const Divider(height: 20),
+            // Firebase Sync Status Row
+            _buildHealthStatusRow(
+              AppTranslations.t('firebase_synced', _selectedLanguage),
+              true,
+            ),
+            const Divider(height: 20),
+            // Local AI Models Loaded Row
+            _buildHealthStatusRow(
+              AppTranslations.t('ai_models_loaded', _selectedLanguage),
+              true,
+            ),
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.bottomRight,
+              child: Text(
+                AppTranslations.t('last_sync', _selectedLanguage),
+                style: GoogleFonts.nunito(
+                  fontSize: 10,
+                  color: kTextLight,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildHealthStatusRow(String label, bool isGood) {
+    final statusColor = isGood ? Colors.green : Colors.red;
+    final activeText = _selectedLanguage == 'اردو' 
+        ? "فعال" 
+        : _selectedLanguage == 'Roman Urdu'
+            ? "Active"
+            : "Active";
+    final offlineText = _selectedLanguage == 'اردو' 
+        ? "آف لائن" 
+        : _selectedLanguage == 'Roman Urdu'
+            ? "Offline"
+            : "Offline";
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.nunito(
+            fontSize: 13,
+            color: kTextDark,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        Row(
+          children: [
+            Icon(Icons.circle, color: statusColor, size: 8),
+            const SizedBox(width: 6),
+            Text(
+              isGood ? activeText : offlineText,
+              style: GoogleFonts.nunito(
+                fontSize: 12,
+                color: statusColor,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
