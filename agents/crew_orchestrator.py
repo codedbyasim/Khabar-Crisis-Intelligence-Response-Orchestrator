@@ -343,7 +343,6 @@ class KhabarCrewOrchestrator:
                 self.log_trace(
                     memory, "ANALYSIS",
                     f"✅ Impact Score: {analysis_result.impact_score:.1f} | "
-                    f"Affected: ~{analysis_result.affected_people} people | "
                     f"Difficulty: {analysis_result.response_difficulty.value}"
                 )
                 break

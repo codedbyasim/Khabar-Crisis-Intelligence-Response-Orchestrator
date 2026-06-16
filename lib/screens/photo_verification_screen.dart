@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:ui';
 import 'dart:convert';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -11,6 +10,9 @@ import 'package:khabar/screens/incident_tracker_screen.dart';
 import 'package:khabar/api_config.dart';
 import 'package:khabar/utils/location_helper.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:khabar/utils/connectivity_service.dart';
+import 'package:khabar/utils/web_helper.dart';
 
 
 class PhotoVerificationScreen extends StatefulWidget {
@@ -26,15 +28,27 @@ class _PhotoVerificationScreenState extends State<PhotoVerificationScreen> {
   XFile? _capturedImage;
   bool _isCameraInitialized = false;
   bool _isSubmitting = false;
-  Map<String, dynamic>? _visionResult;
   double _lat = 33.6844;
   double _lng = 73.0479;
   final TextEditingController _descriptionController = TextEditingController();
+
+  GoogleMapController? _mapController;
+  late LatLng _markerPosition;
+  bool _isFetchingLocation = false;
+  String? _locationStatus;
 
   @override
   void initState() {
     super.initState();
     _initCamera();
+    
+    final String region = LanguageProvider().region;
+    final bool isRawalpindi = region.toLowerCase().contains('rawalpindi');
+    _markerPosition = LatLng(
+      isRawalpindi ? 33.5651 : 33.6844,
+      isRawalpindi ? 73.0169 : 73.0479,
+    );
+
     _fetchDeviceLocation();
   }
 
@@ -45,11 +59,51 @@ class _PhotoVerificationScreenState extends State<PhotoVerificationScreen> {
         setState(() {
           _lat = result.position.latitude;
           _lng = result.position.longitude;
+          _markerPosition = result.position;
+          _locationStatus = result.source != 'default' ? 'ok' : 'err';
         });
+        _mapController?.animateCamera(
+          CameraUpdate.newLatLngZoom(result.position, 16),
+        );
         debugPrint('[GPS] Photo screen location resolved to ($_lat, $_lng) via source: ${result.source}');
       }
     } catch (e) {
       debugPrint("Photo screen GPS error: $e");
+    }
+  }
+
+  Future<void> _fetchGPS({bool showErrors = true}) async {
+    if (_isFetchingLocation) return;
+    if (mounted) setState(() => _isFetchingLocation = true);
+
+    try {
+      final result = await LocationHelper.fetchLocation();
+      if (mounted) {
+        setState(() {
+          _lat = result.position.latitude;
+          _lng = result.position.longitude;
+          _markerPosition = result.position;
+          _locationStatus = result.source != 'default' ? 'ok' : 'err';
+          _isFetchingLocation = false;
+        });
+        _mapController?.animateCamera(
+          CameraUpdate.newLatLngZoom(result.position, 16),
+        );
+
+        if (showErrors) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(result.source == 'ip' 
+                ? 'Mock coordinates via IP: (${result.position.latitude.toStringAsFixed(4)}, ${result.position.longitude.toStringAsFixed(4)})'
+                : 'Current GPS location set successfully.'),
+              backgroundColor: kPrimaryTeal,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) setState(() { _locationStatus = 'err'; _isFetchingLocation = false; });
     }
   }
 
@@ -74,6 +128,7 @@ class _PhotoVerificationScreenState extends State<PhotoVerificationScreen> {
   void dispose() {
     _cameraController?.dispose();
     _descriptionController.dispose();
+    _mapController?.dispose();
     super.dispose();
   }
 
@@ -111,7 +166,6 @@ class _PhotoVerificationScreenState extends State<PhotoVerificationScreen> {
     }
   }
 
-
   Future<void> _analyzeAndSubmit() async {
     if (_capturedImage == null) return;
     setState(() => _isSubmitting = true);
@@ -124,8 +178,8 @@ class _PhotoVerificationScreenState extends State<PhotoVerificationScreen> {
         filename: 'crisis_photo.jpg',
       ));
       final String region = LanguageProvider().region;
-      request.fields['lat'] = _lat.toString();
-      request.fields['lng'] = _lng.toString();
+      request.fields['lat'] = _markerPosition.latitude.toString();
+      request.fields['lng'] = _markerPosition.longitude.toString();
       request.fields['description'] = _descriptionController.text.isNotEmpty 
           ? _descriptionController.text 
           : 'Photo report from KHABAR app ($region)';
@@ -136,21 +190,19 @@ class _PhotoVerificationScreenState extends State<PhotoVerificationScreen> {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         if (mounted) {
-          setState(() {
-            _visionResult = data['vision_analysis'] as Map<String, dynamic>?;
-            _isSubmitting = false;
-          });
-          // Wait 1.5s so user can see result, then navigate
-          await Future.delayed(const Duration(milliseconds: 1500));
-          if (mounted) {
-            Navigator.pushReplacement(
-              context,
-              PageRouteBuilder(
-                pageBuilder: (context, animation, secondaryAnimation) => IncidentTrackerScreen(incidentData: data),
-                transitionsBuilder: (context, animation, secondaryAnimation, child) => FadeTransition(opacity: animation, child: child),
-              ),
-            );
-          }
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Signal successfully processed by AI Pipeline!'),
+              backgroundColor: kPrimaryTeal,
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => IncidentTrackerScreen(incidentData: data),
+            ),
+          );
         }
       } else {
         throw Exception('Server error: ${response.statusCode}');
@@ -174,37 +226,244 @@ class _PhotoVerificationScreenState extends State<PhotoVerificationScreen> {
         backgroundColor: Colors.black,
         iconTheme: const IconThemeData(color: Colors.white),
       ),
-      body: Column(
-        children: [
-          // Top Half: Live Camera Preview
-          Expanded(
-            child: _buildLiveCamera(),
-          ),
-          
-          // Bottom Half: Capture Controls OR Captured Image + Overlay
-          Expanded(
-            child: Container(
-              width: double.infinity,
+      body: _capturedImage == null
+          ? Column(
+              children: [
+                Expanded(child: _buildLiveCamera()),
+                Expanded(
+                  child: Container(
+                    width: double.infinity,
+                    color: kBackgroundLight,
+                    child: _buildCaptureControls(),
+                  ),
+                ),
+              ],
+            )
+          : Container(
               color: kBackgroundLight,
-              child: _capturedImage == null
-                  ? _buildCaptureControls()
-                  : Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        Image.file(
-                          File(_capturedImage!.path),
-                          fit: BoxFit.cover,
-                        ),
-                        // Glassmorphism Overlay
-                        Positioned.fill(
-                          child: _buildAnalysisOverlay(),
-                        ),
-                      ],
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Captured Image Preview Card
+                    Card(
+                      elevation: 2,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      clipBehavior: Clip.antiAlias,
+                      child: Stack(
+                        children: [
+                          Image.file(
+                            File(_capturedImage!.path),
+                            height: 200,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                          ),
+                          Positioned(
+                            bottom: 12,
+                            right: 12,
+                            child: ElevatedButton.icon(
+                              onPressed: _isSubmitting ? null : () {
+                                setState(() {
+                                  _capturedImage = null;
+                                });
+                              },
+                              icon: const Icon(Icons.refresh),
+                              label: const Text('Retake'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.black54,
+                                foregroundColor: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
+                    const SizedBox(height: 16),
+                    
+                    // Description
+                    Text(
+                      'Incident Description',
+                      style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.bold, color: kTextDark),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _descriptionController,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        hintText: 'Describe the damage or incident details... / تفصیلات درج کریں...',
+                        hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey.shade300),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: Colors.grey.shade400),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: kPrimaryTeal, width: 2),
+                        ),
+                        filled: true,
+                        fillColor: kCardWhite,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    
+                    // Location Picker Map
+                    Text(
+                      'Specify Location',
+                      style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.bold, color: kTextDark),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      height: 240,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.grey.shade300),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Stack(
+                          children: [
+                            ValueListenableBuilder<bool>(
+                              valueListenable: ConnectivityService(),
+                              builder: (context, isOnline, child) {
+                                if (isOnline && checkGoogleMapsLoaded()) {
+                                  return GoogleMap(
+                                    initialCameraPosition: CameraPosition(
+                                      target: _markerPosition,
+                                      zoom: 15,
+                                    ),
+                                    onMapCreated: (controller) {
+                                      _mapController = controller;
+                                    },
+                                    myLocationEnabled: true,
+                                    myLocationButtonEnabled: true,
+                                    markers: {
+                                      Marker(
+                                        markerId: const MarkerId('incident_location'),
+                                        position: _markerPosition,
+                                        draggable: true,
+                                        onDragEnd: (newPosition) {
+                                          setState(() {
+                                            _markerPosition = newPosition;
+                                          });
+                                        },
+                                      ),
+                                    },
+                                  );
+                                } else {
+                                  return Container(
+                                    color: Colors.grey.shade200,
+                                    alignment: Alignment.center,
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        const Icon(Icons.cloud_off, size: 48, color: Colors.grey),
+                                        const SizedBox(height: 12),
+                                        Text(
+                                          'Offline Map Mode Active',
+                                          style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.bold, color: kTextDark),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 24),
+                                          child: Text(
+                                            'Google Maps is unavailable offline. Using coordinates: (${_markerPosition.latitude.toStringAsFixed(4)}, ${_markerPosition.longitude.toStringAsFixed(4)})',
+                                            style: GoogleFonts.nunito(fontSize: 12, color: kTextLight),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }
+                              },
+                            ),
+                            Positioned(
+                              top: 10,
+                              right: 10,
+                              child: GestureDetector(
+                                onTap: () => _fetchGPS(showErrors: true),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(20),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.black.withValues(alpha: 0.15),
+                                        blurRadius: 6,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      if (_isFetchingLocation)
+                                        const SizedBox(
+                                          width: 14,
+                                          height: 14,
+                                          child: CircularProgressIndicator(strokeWidth: 2, color: kPrimaryTeal),
+                                        )
+                                      else
+                                        Icon(
+                                          _locationStatus == 'ok' ? Icons.my_location : Icons.location_searching,
+                                          size: 14,
+                                          color: _locationStatus == 'ok' ? kPrimaryTeal : Colors.grey.shade600,
+                                        ),
+                                      const SizedBox(width: 6),
+                                      Text(
+                                        _isFetchingLocation ? 'Locating...' : _locationStatus == 'ok' ? 'Location Set ✓' : 'Use My Location',
+                                        style: GoogleFonts.nunito(fontSize: 11, fontWeight: FontWeight.bold, color: _locationStatus == 'ok' ? kPrimaryTeal : Colors.grey.shade700),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Tap/drag the map marker or use GPS to set coordinate location',
+                      style: GoogleFonts.nunito(fontSize: 11, color: kTextLight),
+                    ),
+                  ],
+                ),
+              ),
             ),
-          ),
-        ],
-      ),
+      bottomNavigationBar: _capturedImage == null
+          ? null
+          : SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: ElevatedButton(
+                  onPressed: _isSubmitting ? null : _analyzeAndSubmit,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kPrimaryTeal,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  child: _isSubmitting
+                      ? const SizedBox(
+                          height: 20,
+                          width: 20,
+                          child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                        )
+                      : const Text(
+                          'Send to Gemini Pipeline →',
+                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                        ),
+                ),
+              ),
+            ),
     );
   }
 
@@ -276,7 +535,7 @@ class _PhotoVerificationScreenState extends State<PhotoVerificationScreen> {
                     decoration: const BoxDecoration(
                       color: kPrimaryTeal,
                       shape: BoxShape.circle,
-                ),
+                    ),
                     child: const Icon(Icons.camera_alt, color: Colors.white, size: 32),
                   ),
                 ),
@@ -290,137 +549,6 @@ class _PhotoVerificationScreenState extends State<PhotoVerificationScreen> {
               height: 56,
             ),
           ],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAnalysisOverlay() {
-    final crisisType = _visionResult?['crisis_type'] ?? 'Analyzing...';
-    final severity = _visionResult?['severity'] ?? '—';
-    final priority = _visionResult?['priority'] ?? '—';
-    final confidence = _visionResult != null
-        ? '${((_visionResult!['confidence'] ?? 0) * 100).toInt()}%'
-        : '—';
-    final elements = (_visionResult?['detected_elements'] as List?)?.join(', ') ?? 'Processing...';
-    final description = _visionResult?['description'] ?? 'Gemini Vision analyzing image...';
-
-    return Column(
-      children: [
-        Expanded(
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Center(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                  child: Container(
-                    padding: const EdgeInsets.all(16),
-                    width: double.infinity,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.55),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
-                    ),
-                    child: _visionResult == null && !_isSubmitting
-                        ? Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Row(
-                                children: [
-                                  const Icon(Icons.description, color: kPrimaryTeal, size: 20),
-                                  const SizedBox(width: 8),
-                                  Text('Add Text Details', style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.bold, color: kPrimaryTeal)),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              TextField(
-                                controller: _descriptionController,
-                                maxLines: 4,
-                                decoration: InputDecoration(
-                                  hintText: 'Describe the damage or incident details here... (e.g. road blocked, flooded area) / تفصیلات درج کریں...',
-                                  hintStyle: const TextStyle(color: Colors.black54, fontSize: 13),
-                                  fillColor: Colors.white.withValues(alpha: 0.4),
-                                  filled: true,
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(10),
-                                    borderSide: BorderSide.none,
-                                  ),
-                                ),
-                                style: const TextStyle(color: Colors.black87, fontSize: 14),
-                              ),
-                              const SizedBox(height: 12),
-                              OutlinedButton.icon(
-                                onPressed: () {
-                                  setState(() {
-                                    _capturedImage = null;
-                                  });
-                                },
-                                icon: const Icon(Icons.refresh, size: 16),
-                                label: const Text('Retake Photo'),
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: Colors.black87,
-                                  side: const BorderSide(color: Colors.black38),
-                                ),
-                              ),
-                            ],
-                          )
-                        : _visionResult == null
-                            ? const Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    CircularProgressIndicator(color: kPrimaryTeal),
-                                    SizedBox(height: 16),
-                                    Text('Gemini Vision assessing damage...', style: TextStyle(color: kPrimaryTeal, fontWeight: FontWeight.bold)),
-                                  ],
-                                ),
-                              )
-                            : Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(Icons.auto_awesome, color: kPrimaryTeal, size: 20),
-                                      const SizedBox(width: 8),
-                                      Text('Gemini Vision Analysis', style: GoogleFonts.nunito(fontSize: 16, fontWeight: FontWeight.bold, color: kPrimaryTeal)),
-                                      const Spacer(),
-                                      Text('Confidence: $confidence', style: GoogleFonts.nunito(fontSize: 12, color: kPrimaryTeal)),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Text('Crisis Type: $crisisType', style: GoogleFonts.nunito(fontSize: 14, color: Colors.black87)),
-                                  const SizedBox(height: 4),
-                                  Text('Severity: $severity ($priority)', style: GoogleFonts.nunito(fontSize: 14, fontWeight: FontWeight.bold, color: kEmergencyRed)),
-                                  const SizedBox(height: 4),
-                                  Text('Detected: $elements', style: GoogleFonts.nunito(fontSize: 13, color: Colors.black87)),
-                                  const SizedBox(height: 6),
-                                  Text(description, style: GoogleFonts.nunito(fontSize: 12, color: Colors.black54)),
-                                ],
-                              ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: ElevatedButton(
-            onPressed: _isSubmitting ? null : _analyzeAndSubmit,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: kPrimaryTeal,
-              foregroundColor: Colors.white,
-              minimumSize: const Size(double.infinity, 50),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: _isSubmitting
-                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : const Text('Send to Gemini Pipeline →', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          ),
         ),
       ],
     );

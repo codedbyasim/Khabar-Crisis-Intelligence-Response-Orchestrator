@@ -68,14 +68,58 @@ class GeminiSpeech:
                 tmp_path = tmp.name
 
             # --- Step 1: Transcribe ---
-            with open(tmp_path, "rb") as audio_file:
-                transcription_response = self.client.audio.transcriptions.create(
-                    model=self.transcription_model,
-                    file=audio_file,
-                    response_format="text",
+            import httpx
+            import time
+
+            headers = {
+                "Authorization": f"Bearer {self.api_key}"
+            }
+            # Note: We open the file block-managed so it is properly closed before unlinking
+            with open(tmp_path, "rb") as f:
+                files = {
+                    "audio": (os.path.basename(tmp_path), f, mime_type)
+                }
+                data = {
+                    "model": "#g1_whisper-large"
+                }
+                logging.info(f"[GeminiSpeech] Submitting STT task to AIML API for {os.path.basename(tmp_path)}")
+                response = httpx.post(
+                    "https://api.aimlapi.com/v1/stt/create",
+                    headers=headers,
+                    files=files,
+                    data=data,
+                    timeout=30.0
                 )
-            # transcription_response is a plain string when response_format="text"
-            raw_transcript = str(transcription_response).strip()
+
+            if response.status_code != 200:
+                raise Exception(f"Failed to initiate transcription task: {response.status_code} - {response.text}")
+
+            task_info = response.json()
+            generation_id = task_info.get("generation_id")
+            if not generation_id:
+                raise Exception(f"No generation_id returned: {task_info}")
+
+            poll_url = f"https://api.aimlapi.com/v1/stt/{generation_id}"
+            raw_transcript = ""
+            max_polls = 30
+            for i in range(max_polls):
+                time.sleep(2)
+                poll_resp = httpx.get(poll_url, headers=headers, timeout=10.0)
+                if poll_resp.status_code == 200:
+                    poll_data = poll_resp.json()
+                    status = poll_data.get("status")
+                    logging.info(f"[GeminiSpeech] Polling task status: {status}")
+                    if status == "completed":
+                        raw_transcript = poll_data.get("text", "") or ""
+                        if raw_transcript.strip().lower() in ("none", "null"):
+                            raw_transcript = ""
+                        break
+                    elif status == "failed":
+                        raise Exception(f"Transcription task failed on server: {poll_data}")
+                else:
+                    logging.warning(f"[GeminiSpeech] Poll #{i+1} failed with code {poll_resp.status_code}: {poll_resp.text}")
+
+            raw_transcript = raw_transcript.strip()
             logging.info(f"[GeminiSpeech] Transcript: {raw_transcript[:120]}...")
 
             # --- Step 2: Crisis Analysis ---

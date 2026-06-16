@@ -37,6 +37,47 @@ class GeminiVision:
     ) -> Dict[str, Any]:
         """Analyze a crisis scene image using AIML Vision API."""
         try:
+            # Normalize mime_type: if application/octet-stream or not starting with image/, default to image/jpeg
+            if not mime_type or not mime_type.startswith("image/") or mime_type == "application/octet-stream":
+                mime_type = "image/jpeg"
+
+            # Resize and compress image using Pillow to prevent large payloads causing 400 errors
+            from io import BytesIO
+            from PIL import Image
+
+            try:
+                original_size = len(image_bytes)
+                img = Image.open(BytesIO(image_bytes))
+                
+                # Convert RGBA to RGB if saving as JPEG
+                if img.mode in ("RGBA", "P") and mime_type in ("image/jpeg", "image/jpg"):
+                    img = img.convert("RGB")
+                
+                # Downscale if dimensions exceed 1024
+                max_dim = 1024
+                if max(img.width, img.height) > max_dim:
+                    img.thumbnail((max_dim, max_dim), Image.Resampling.LANCZOS)
+                
+                # Save back to bytes
+                out_io = BytesIO()
+                # Determine format name
+                img_format = "JPEG"
+                if "png" in mime_type.lower():
+                    img_format = "PNG"
+                elif "webp" in mime_type.lower():
+                    img_format = "WEBP"
+                elif "gif" in mime_type.lower():
+                    img_format = "GIF"
+                    
+                img.save(out_io, format=img_format, quality=75 if img_format != "PNG" else None)
+                image_bytes = out_io.getvalue()
+                logging.info(
+                    f"[GeminiVision] Compressed image from {original_size} bytes to {len(image_bytes)} bytes "
+                    f"(dimensions: {img.width}x{img.height}, format: {img_format})"
+                )
+            except Exception as resize_err:
+                logging.warning(f"[GeminiVision] Image resizing/compression failed: {resize_err}. Using original bytes.")
+
             # Encode image to base64 data URL (OpenAI vision format)
             b64_image = base64.b64encode(image_bytes).decode("utf-8")
             data_url = f"data:{mime_type};base64,{b64_image}"

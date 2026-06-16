@@ -167,7 +167,13 @@ export default function App() {
     if (match) {
       const timeFull = match[1];
       const phase = match[2];
-      const message = match[3];
+      let message = match[3];
+      
+      // Remove "Affected: ... people" segment if present in the trace logs
+      message = message.replace(/\|\s*Affected:\s*~?-?\d+\s*people\s*/gi, '');
+      message = message.replace(/Affected:\s*~?-?\d+\s*people\s*\|\s*/gi, '');
+      message = message.replace(/Affected:\s*~?-?\d+\s*people\s*/gi, '');
+
       const time = timeFull.includes('T') ? timeFull.split('T')[1].split('.')[0] : timeFull;
       return { phase, time, message };
     }

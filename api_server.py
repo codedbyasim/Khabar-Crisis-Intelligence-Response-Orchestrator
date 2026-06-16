@@ -953,6 +953,12 @@ RULES:
 7. TEXT FORMATTING RULES: Avoid raw markdown symbols that look ugly (like '**', '__', or '|'). Instead, use plain, clean text. When listing items (e.g., resources or safety tips), ALWAYS start each item on a new line using a newline '\n' character and prefix it with a simple list bullet (e.g. '🔹' or '-'). Never write list items on a single contiguous block of text.
 8. When users ask about what incidents occurred or where they occurred (e.g., 'Kahan kahan incident huva hai?', 'Any active news or emergencies?'), look at the 'SYSTEM CONTEXT — ACTIVE REPORTED INCIDENTS IN DATABASE' above and describe exactly where they happened, what type they are, and their current priority/status. Be specific and helpful.
 9. When users ask about the weather, temperature, rain, or storm conditions, check the 'LIVE WEATHER SENSOR CONTEXT (Open-Meteo)' above and describe the current conditions for their location in detail, offering safety tips if conditions are severe.
+10. IMMEDIATE SAFETY TIPS (CRITICAL): If the user reports an active emergency, hazard, or asks when help/WASA/Rescue 1122 will arrive, you MUST ALWAYS provide a list of immediate safety guidelines or first-aid actions they should perform while waiting for the response team to reach their location.
+    Use a dedicated heading based on the language:
+    - English: "🚨 WHAT TO DO UNTIL HELP ARRIVES:"
+    - Urdu: "🚨 مدد پہنچنے تک کیا کریں:"
+    - Roman Urdu: "🚨 MADAD POHANCHNAY TAK KYA KAREIN:"
+    Follow this heading with 3-4 specific, short, comforting, bulleted actions (e.g., move to higher ground, switch off electricity, keep warm, do not cross flooded roads, etc.) tailored to the specific threat.
 
 FINAL REMINDER: The user's language is {target_lang}. You MUST follow the language rule: {language_rule}
 """
