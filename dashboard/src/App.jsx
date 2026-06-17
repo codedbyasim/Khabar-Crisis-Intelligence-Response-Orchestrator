@@ -13,9 +13,7 @@ import ResourceManager from './components/ResourceManager';
 import CaseTracker from './components/CaseTracker';
 import Chatbot from './components/Chatbot';
 
-const API_BASE = window.location.port === '8000'
-  ? window.location.origin
-  : 'http://127.0.0.1:8000';
+const API_BASE = 'https://khabar-api-xjc4.onrender.com';
 
 const SCENARIOS = [
   {
