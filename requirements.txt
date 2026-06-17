@@ -10,4 +10,5 @@ openai
 google-search-results
 crewai
 litellm
-tiktoken>=0.9.0
+tiktoken
+google-genai
