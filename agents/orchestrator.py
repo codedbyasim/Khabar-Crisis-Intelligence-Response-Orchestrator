@@ -136,12 +136,14 @@ class KhabarOrchestrator:
 
     # ── Dashboard push (Firestore) ──
     def push_to_firestore(self, memory: IncidentMemory):
-        # Resolve lat/lng dynamically
+        # Resolve lat/lng and user_id dynamically
         lat = None
         lng = None
+        user_id = None
         if memory.raw_signal and memory.raw_signal.metadata:
             lat = memory.raw_signal.metadata.get("lat")
             lng = memory.raw_signal.metadata.get("lng")
+            user_id = memory.raw_signal.metadata.get("user_id")
             
         if (lat is None or lng is None) and memory.detection_output and memory.detection_output.detected_location:
             loc = memory.detection_output.detected_location
@@ -174,6 +176,7 @@ class KhabarOrchestrator:
             "traces": memory.traces,
             "latest_traces": memory.traces[-5:],
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "user_id": user_id,
         }
         # Add detection info if available
         if memory.detection_output:
