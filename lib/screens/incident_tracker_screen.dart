@@ -25,6 +25,7 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
   bool _isLoadingIncident = false;
   String? _errorMessage;
   bool _isHelpDelivered = false;
+  bool _isConfirmingHelp = false;
   Timer? _pollTimer;
   List<dynamic> _resourcesList = [];
 
@@ -43,6 +44,10 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
     
     if (widget.incidentData != null) {
       _liveIncidentData = widget.incidentData;
+      final status = _liveIncidentData!['status']?.toString().toUpperCase() ?? '';
+      if (status == 'RESOLVED' || status == 'CLOSED' || status == 'COMPLETED' || status == 'REJECTED') {
+        _isHelpDelivered = true;
+      }
     }
     
     _fetchLatestIncident();
@@ -71,6 +76,63 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
     super.dispose();
   }
 
+  Future<void> _confirmHelpDelivered(String incidentId) async {
+    if (_isConfirmingHelp) return;
+    setState(() {
+      _isConfirmingHelp = true;
+    });
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/action/execute'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'incident_id': incidentId,
+          'action_type': 'status',
+          'new_status': 'RESOLVED',
+        }),
+      ).timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        if (mounted) {
+          setState(() {
+            _isHelpDelivered = true;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Help delivery confirmed successfully!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+          _pollSpecificIncident(incidentId);
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Failed to confirm: ${response.body}'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isConfirmingHelp = false;
+        });
+      }
+    }
+  }
+
   Future<void> _pollSpecificIncident(String incidentId) async {
     try {
       final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/incident/$incidentId'))
@@ -80,6 +142,10 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
         if (mounted) {
           setState(() {
             _liveIncidentData = data;
+            final status = data['status']?.toString().toUpperCase() ?? '';
+            if (status == 'RESOLVED' || status == 'CLOSED' || status == 'COMPLETED' || status == 'REJECTED') {
+              _isHelpDelivered = true;
+            }
           });
         }
       }
@@ -105,6 +171,10 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
           setState(() {
             if (incidents.isNotEmpty) {
               _liveIncidentData = incidents.first; // Latest active incident
+              final status = _liveIncidentData!['status']?.toString().toUpperCase() ?? '';
+              if (status == 'RESOLVED' || status == 'CLOSED' || status == 'COMPLETED' || status == 'REJECTED') {
+                _isHelpDelivered = true;
+              }
             } else {
               _liveIncidentData = null;
             }
@@ -418,14 +488,28 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: () => setState(() => _isHelpDelivered = true),
-                    icon: const Icon(Icons.check_circle_outline),
-                    label: const Text('Confirm Help Delivered'),
+                    onPressed: _isConfirmingHelp || currentIncidentId == null
+                        ? null
+                        : () => _confirmHelpDelivered(currentIncidentId),
+                    icon: _isConfirmingHelp
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Icon(Icons.check_circle_outline),
+                    label: Text(_isConfirmingHelp
+                        ? 'Confirming...'
+                        : 'Confirm Help Delivered'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12)),
                     ),
                   ),
                 ),
