@@ -104,13 +104,15 @@ class _OfflineChatScreenState extends State<OfflineChatScreen> {
         if (mounted) {
           setState(() {
             _isDownloading = false;
-            _downloadError = 'Download failed: $error';
+            _downloadError = error.toString().replaceAll('Exception: ', '');
           });
         }
       },
       onDone: () {
         if (mounted) {
+          setState(() {
             _isDownloading = false;
+          });
         }
         _initializeModel();
       },

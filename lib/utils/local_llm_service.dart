@@ -46,52 +46,89 @@ class LocalLlmService {
     }
   }
 
-  /// Downloads the 350MB Qwen GGUF model file chunk-by-chunk and streams progress (0.0 to 1.0)
+  /// Downloads the 350MB Qwen GGUF model file chunk-by-chunk.
+  /// Supports HTTP Range-based resume: if a partial file exists, continues from where it left off.
+  /// Retries up to 5 times with exponential backoff on connection failures.
   Stream<double> downloadModel() async* {
     final file = await _getModelFile();
-    if (await file.exists()) {
-      yield 1.0;
-      return;
-    }
+    await file.parent.create(recursive: true);
 
-    final client = http.Client();
-    try {
-      final request = http.Request('GET', Uri.parse(modelDownloadUrl));
-      final response = await client.send(request);
+    const int maxRetries = 5;
+    int attempt = 0;
 
-      if (response.statusCode != 200) {
-        throw Exception('Download failed with status: ${response.statusCode}');
-      }
-
-      final totalBytes = response.contentLength ?? 360000000;
+    while (attempt < maxRetries) {
+      attempt++;
       int downloadedBytes = 0;
-
-      await file.parent.create(recursive: true);
-      await _deleteModelFile();
-      final IOSink sink = file.openWrite();
-
-      try {
-        await for (var chunk in response.stream) {
-          sink.add(chunk);
-          downloadedBytes += chunk.length;
-          double progress = downloadedBytes / totalBytes;
-          if (progress > 1.0) progress = 1.0;
-          yield progress;
+      if (await file.exists()) {
+        downloadedBytes = await file.length();
+        if (downloadedBytes >= _minimumModelBytes) {
+          yield 1.0;
+          return;
         }
-        await sink.flush();
-      } finally {
-        await sink.close();
       }
 
-      if (downloadedBytes < totalBytes || downloadedBytes < _minimumModelBytes) {
-        await _deleteModelFile();
-        throw Exception('Downloaded file is incomplete.');
+      debugPrint("[LocalLlm] Download attempt $attempt/$maxRetries (offset: $downloadedBytes bytes)");
+      final client = http.Client();
+      try {
+        int totalBytes = 360000000;
+        try {
+          final headResp = await client.head(Uri.parse(modelDownloadUrl))
+              .timeout(const Duration(seconds: 15));
+          final cl = headResp.headers['content-length'];
+          if (cl != null) totalBytes = int.parse(cl);
+        } catch (_) {}
+
+        final request = http.Request('GET', Uri.parse(modelDownloadUrl));
+        if (downloadedBytes > 0) {
+          request.headers['Range'] = 'bytes=$downloadedBytes-';
+        }
+
+        final response = await client.send(request)
+            .timeout(const Duration(seconds: 30));
+
+        if (response.statusCode != 200 && response.statusCode != 206) {
+          throw Exception('Server returned status: ${response.statusCode}');
+        }
+
+        final sink = file.openWrite(
+          mode: downloadedBytes > 0 ? FileMode.append : FileMode.write,
+        );
+
+        try {
+          await for (final chunk in response.stream) {
+            sink.add(chunk);
+            downloadedBytes += chunk.length;
+            double progress = downloadedBytes / totalBytes;
+            if (progress > 1.0) progress = 1.0;
+            yield progress;
+          }
+          await sink.flush();
+        } finally {
+          await sink.close();
+        }
+
+        final finalSize = await file.length();
+        if (finalSize >= _minimumModelBytes) {
+          debugPrint("[LocalLlm] Download complete! Total: $finalSize bytes");
+          yield 1.0;
+          return;
+        } else {
+          throw Exception('File incomplete after download ($finalSize bytes).');
+        }
+      } catch (e) {
+        client.close();
+        debugPrint("[LocalLlm] Attempt $attempt failed: $e");
+        if (attempt >= maxRetries) {
+          await _deleteModelFile();
+          throw Exception(
+            'Download failed after $maxRetries attempts. '
+            'Please check your internet connection and try again.',
+          );
+        }
+        await Future.delayed(Duration(seconds: attempt * 2));
+      } finally {
+        client.close();
       }
-    } catch (e) {
-      await _deleteModelFile();
-      rethrow;
-    } finally {
-      client.close();
     }
   }
 
