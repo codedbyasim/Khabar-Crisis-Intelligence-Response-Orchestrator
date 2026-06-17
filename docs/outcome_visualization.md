@@ -36,15 +36,7 @@ Displays the complete outcome of the 4-agent pipeline for a single incident:
 - Generated bilingual alerts (displayed in card format)
 - Final outcome string
 
-#### 📋 Before / After State Comparison
-Side-by-side card layout showing:
 
-| Before | After |
-|---|---|
-| ambulance: 0 | ambulance: 2 |
-| rescue_team: 0 | rescue_team: 3 |
-| closed_roads: [] | closed_roads: ["Murree Road"] |
-| alerts_sent: 0 | alerts_sent: 2 |
 
 #### 🕐 Agent Trace Timeline
 Chronological timestamped log of every agent step:
@@ -98,6 +90,7 @@ Shows a live Flutter map view with:
 #### 🤖 `AgentPanel.jsx` — Incident Detail & Agent Pipeline View
 - 4-agent pipeline accordion with per-stage outputs
 - **Allocated Incident Resources** badge list — specific units currently assigned to selected incident
+- **Case Analysis & Summary** card showing English and right-to-left (RTL) Noto Nastaliq Urdu case summaries loaded from PostgreSQL
 - Agent trace timeline viewer
 - Manual action execution panel
 
@@ -111,6 +104,7 @@ Shows a live Flutter map view with:
   - `"Send flood alert to sector G-10"` → `[EXECUTE: alert, ...]`
 - Language support: English, Urdu, Roman Urdu
 - Fallback: Multi-model resilience retry loop (Gemini -> GPT -> Llama -> Hardcoded JSON)
+- Markdown rendering (bold, bullets) for clean output
 
 #### 📊 `CaseTracker.jsx` — Priority Distribution
 - SVG progress rings for P1–P5 incident counts
@@ -119,14 +113,11 @@ Shows a live Flutter map view with:
 #### 📈 `StatsGrid.jsx` — KPI Cards
 - Total Incidents, Active Resources, Alerts Sent, Pipeline Success Rate
 
-#### 🔔 `AlertsPanel.jsx` — Live Alert Feed
-- Real-time list of FCM alerts sent with timestamps and bilingual content
-
 #### 📋 `SituationSummary.jsx` — AI Situation Overview
 - Narrative summary of current emergency landscape
 
 #### 🧭 `Sidebar.jsx` — Navigation
-- View switcher between Dashboard, Incidents, Resources, Alerts
+- View switcher between Dashboard, Incidents, and Resources (Alerts and Simulator tabs have been completely removed)
 
 ---
 

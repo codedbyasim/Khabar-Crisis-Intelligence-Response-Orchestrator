@@ -11,12 +11,12 @@ Complete technical documentation for the KHABAR Crisis Intelligence & Response O
 | [architecture.md](architecture.md) | Full system architecture — Flutter app, FastAPI backend, React dashboard, LLM chain, DB layer |
 | [api_endpoints.md](api_endpoints.md) | All 17 API endpoints with request/response schemas |
 | [multi_agent_pipeline.md](multi_agent_pipeline.md) | 4-agent pipeline — per-stage schemas, CrewAI orchestration, tools |
-| [multi_source_input.md](multi_source_input.md) | Text, image, voice input modalities + automated ingestion |
+| [multi_source_input.md](multi_source_input.md) | Text and image input modalities + automated ingestion |
 | [action_simulation.md](action_simulation.md) | 7 Antigravity tools — before/after state tracking |
 | [outcome_visualization.md](outcome_visualization.md) | Flutter UI, React dashboard, Chatbot, map visualization, trace export |
 | [fcm_notifications.md](fcm_notifications.md) | Firebase FCM push notifications — setup & bilingual templates |
 | [external_integrations.md](external_integrations.md) | All external APIs — AIML, Supabase, Maps, Weather, News |
-| [local_model.md](local_model.md) | ★ Offline AI Assistant — 100% on-device client-side offline intelligence |
+| [local_model.md](local_model.md) | ★ Offline AI Assistant — On-device local GGUF intelligence (Qwen2.5) |
 
 ---
 
@@ -52,7 +52,7 @@ flutter run                   # Android emulator/device
 | Layer | Technology |
 |---|---|
 | Primary LLM | AIML API → `google/gemini-2.5-flash` (OpenAI-compatible) |
-| Offline LLM | 100% on-device local keyword matching engine (Urdu, English, Roman Urdu) |
+| Offline LLM | On-device Qwen2.5-0.5B GGUF model via llama_cpp_dart (with regex fallback) |
 | Backend | Python FastAPI (`api_server.py`) + Uvicorn on port 8000 |
 | Web Dashboard | Vite + React 18 + Leaflet.js on port 8001 |
 | Mobile App | Flutter 3.16+ / Dart |
@@ -68,7 +68,6 @@ flutter run                   # Android emulator/device
 |---|---|
 | `POST /report/text` | Submit text crisis report → triggers 4-agent pipeline |
 | `POST /report/image` | Upload photo → Vision AI analysis |
-| `POST /report/voice` | Upload audio → Whisper transcription |
 | `GET /incidents` | All active incidents |
 | `GET /resources` | Resource inventory with allocation status |
 | `POST /action/execute` | Manually dispatch resources or execute actions |

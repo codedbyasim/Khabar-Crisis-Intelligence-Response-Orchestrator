@@ -1,30 +1,30 @@
 # 📥 Multi-Source Input System
 
-KHABAR accepts crisis signals from **three distinct input modalities** — text, image, and voice — all processed through the same 4-agent pipeline.
+KHABAR accepts crisis signals from **two distinct input modalities** — text and image — both processed through the same 4-agent pipeline.
 
 ---
 
 ## Input Modalities
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│              CITIZEN INPUT MODALITIES                   │
-│                                                         │
-│  ┌────────────────┐  ┌────────────────┐  ┌──────────┐  │
-│  │  📝 TEXT       │  │  📷 IMAGE      │  │ 🎙 VOICE │  │
-│  │  /report/text  │  │  /report/image │  │ /report/ │  │
-│  │                │  │                │  │ voice    │  │
-│  │ Urdu, English  │  │ JPEG/PNG       │  │ M4A/WAV  │  │
-│  │ Roman Urdu     │  │ + description  │  │ + photo  │  │
-│  │ Punjabi        │  │                │  │          │  │
-│  └───────┬────────┘  └───────┬────────┘  └────┬─────┘  │
-│          └──────────────┬────┘                │         │
-│                         │    RawCrisisSignal   │         │
-└─────────────────────────┼──────────────────────┘         
-                          ↓
-              KhabarCrewOrchestrator.process_incident()
-                          ↓
-              [4-Agent Pipeline: Detection → Execution]
+┌──────────────────────────────────────────────────┐
+│              CITIZEN INPUT MODALITIES            │
+│                                                  │
+│  ┌────────────────┐         ┌────────────────┐  │
+│  │  📝 TEXT       │         │  📷 IMAGE      │  │
+│  │  /report/text  │         │  /report/image │  │
+│  │                │         │                │  │
+│  │ Urdu, English  │         │ JPEG/PNG       │  │
+│  │ Roman Urdu     │         │ + description  │  │
+│  │ Punjabi        │         │                │  │
+│  └───────┬────────┘         └───────┬────────┘  │
+│          └────────────────┬─────────┘           │
+│                           │ RawCrisisSignal     │
+└───────────────────────────┼─────────────────────┘
+                            ↓
+                KhabarCrewOrchestrator.process_incident()
+                            ↓
+                [4-Agent Pipeline: Detection → Execution]
 ```
 
 ---
@@ -78,46 +78,7 @@ KHABAR accepts crisis signals from **three distinct input modalities** — text,
 - Optional text description field alongside photo
 - Interactive preview showing details before sending to the Gemini AI pipeline
 
----
-
-## 3. 🎙 Voice Input (`POST /report/voice`)
-
-**Accepted formats:** M4A, WAV, OGG  
-**Processing:** OpenAI Whisper API via AIML API endpoint
-
-**Optional:** Attach a photo alongside the voice recording for dual-modal analysis.
-
-**Two-step process:**
-```
-1. Whisper API transcribes audio
-   → detected_language, transcription_original (Urdu script or Roman),
-     transcription_english (translated)
-
-2. If photo attached → Vision API runs simultaneously
-   → Both results merged into combined RawCrisisSignal
-
-3. Combined signal → 4-agent pipeline
-```
-
-**Speech Output Example:**
-```json
-{
-  "detected_language": "Urdu",
-  "transcription_original": "گاڑیاں ڈوب رہی ہیں اور راستہ بند ہے",
-  "transcription_english": "Cars are sinking and the road is blocked.",
-  "audio_quality": "clear",
-  "confidence": 0.92
-}
-```
-
-**Flutter Screen:** `lib/screens/voice_report_screen.dart`
-- Multi-Source capture: Record live voice (mic) OR upload pre-recorded audio files (via `file_picker`)
-- Optional photo attachment
-- Animated waveform amplitude visualizer
-
----
-
-## 4. 🤖 Automated Ingestion (`automated_ingestion.py`)
+## 3. 🤖 Automated Ingestion (`automated_ingestion.py`)
 
 Beyond manual citizen reports, KHABAR automatically monitors:
 
@@ -131,15 +92,15 @@ These auto-generated signals enter the same `KhabarCrewOrchestrator.process_inci
 
 ---
 
-## 5. Signal Lifecycle
+## 4. Signal Lifecycle
 
 ```
 RawCrisisSignal created
-  ├── signal_id: "SIG-{timestamp}-{TXT|IMG|VOI}"
-  ├── source_type: TEXT_ROMAN_URDU | IMAGE_SUMMARY | VOICE_TRANSCRIPT | AUTOMATED_*
+  ├── signal_id: "SIG-{timestamp}-{TXT|IMG}"
+  ├── source_type: TEXT_ROMAN_URDU | IMAGE_SUMMARY | AUTOMATED_*
   ├── raw_content: string
   ├── timestamp: ISO 8601
-  └── metadata: {lat, lng, vision_result?, speech_result?}
+  └── metadata: {lat, lng, vision_result?}
 
          ↓ orchestrator.process_incident(signal)
 

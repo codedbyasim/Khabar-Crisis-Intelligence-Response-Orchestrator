@@ -137,8 +137,10 @@ python api_server.py
 For 100% offline capability when network connection or backend services are unavailable, the mobile client includes a dedicated **Offline AI Assistant** accessible directly from the Login/Signup screen.
 
 - **Zero Server Overhead**: The backend GGUF model (`llama-cpp-python` inference) is decoupled/bypassed at runtime on the server to prevent RAM/CPU saturation.
-- **On-Device Execution**: The offline assistant runs 100% locally in Dart code within the mobile client, requiring zero server connection.
-- **Language & Regex Processing**: Utilizes regex-based keyword parsing to handle English, Urdu script, and Roman Urdu inputs, returning tailored emergency hotline details and Pakistan NDMA standard safety guidelines.
+- **On-Device Qwen2.5 Execution**: The offline assistant downloads the quantized **Qwen2.5-0.5B-Instruct** GGUF model (~350MB) on demand directly on the device using standard chunk streams and executes it using native llama_cpp bindings for Dart.
+- **Isolate Offloading**: Running inference is offloaded to background isolates to ensure that token generation does not freeze or block the mobile application's main UI thread.
+- **Bilingual Token Streaming**: Message bubble responses are streamed dynamically in English, Urdu, and Roman Urdu.
+- **Zero-Dependency Fallback**: If the model has not been downloaded yet, the app falls back instantly to a fast regex-based keyword parser matching Pakistan NDMA emergency protocols, helplines, and safety tips.
 
 ---
 

@@ -13,9 +13,11 @@ In KHABAR, heavy GGUF local model inference has been **decoupled from the backen
 - **API Fallback Chain**: If the primary AIML API model fails or times out, the backend falls back safely to Pydantic-aligned static schema JSON generation in `llm_client.py` instead of initiating GGUF loading.
 
 ### 2. On-Device Client-Side Offline AI (`lib/utils/local_llm_service.dart`)
-- **Intelligent Response Engine**: A robust, regex-based keyword-matching engine is implemented directly on the device.
-- **Multilingual Support**: Supports English, Urdu, and Roman Urdu.
-- **Emergency Categories Matched**:
+- **Qwen2.5-0.5B-Instruct Local GGUF**: Integrates native llama_cpp bindings for Dart to run the quantized Qwen model locally on-device.
+- **Dynamic Downloading**: Includes a chunk-based downloader with a progress indicator (~350MB GGUF download on demand).
+- **Background Isolate Offloading**: Runs heavy GGUF inference in a background isolate (background thread) to guarantee smooth 60fps mobile UI rendering during answer generation.
+- **Multilingual Token Streaming**: Streams response tokens word-by-word in English, Urdu, and Roman Urdu.
+- **Intelligent Fallback Engine**: If the model has not been downloaded yet, the service falls back instantly to a regex-based keyword-matching engine covering:
   * **🚨 Helplines**: Immediate numbers for Rescue 1122, Police 15, Fire 16, WASA 1334, and CDA.
   * **🌧️ Monsoon / Rain**: Rain storm precautions, lightning safety, and WASA monitoring metrics.
   * **🌊 Flooding**: Nullah Lai flood warnings, dewatering alerts, and household water entering rules.
@@ -41,6 +43,8 @@ The offline assistant is accessed directly from the **Login/Signup Page** using 
 
 ### Key Visual & Functional Features:
 - **Active Core Status Indicator**: Displays a glowing green dot labeled `On-Device Core: ACTIVE` indicating offline execution.
+- **Download Management Card**: Interactive panel displaying the download status, download file size, progress bar (percentage), and model initialization states.
 - **Offline Banner**: Renders a notice alerting users that the mode is offline, and in critical danger, they should dial 1122 directly.
 - **Suggested Action Chips**: Shows quick-trigger chips (e.g. `🚨 Helplines`, `🌧️ Rain Precautions`) that dynamically adapt to the active language.
 - **Custom Markdown Render Engine**: Converts bold highlights (`**bold**`) and bullet points (`* `) into inline `RichText` widgets with customized teal glow highlights, keeping UI premium without external packages.
+- **Dynamic Token Streaming**: Renders text word-by-word as it is generated from the background isolate.

@@ -8,7 +8,7 @@ KHABAR uses a **4-stage sequential multi-agent pipeline**. Each agent receives t
 
 ```mermaid
 flowchart LR
-    S([Raw Signal\nText/Image/Voice]) --> D
+    S([Raw Signal\nText/Image]) --> D
 
     D[Stage 1\nDetection Agent] -->|is_verified=true| A
     D -->|is_verified=false| R([REJECTED\nSpam/Invalid])

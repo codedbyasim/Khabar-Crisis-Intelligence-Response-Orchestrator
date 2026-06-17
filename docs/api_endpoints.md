@@ -16,7 +16,6 @@ Android Emulator: `http://10.0.2.2:8000`
 | `POST` | `/auth/login` | Authentication |
 | `POST` | `/report/text` | Crisis Reporting |
 | `POST` | `/report/image` | Crisis Reporting |
-| `POST` | `/report/voice` | Crisis Reporting |
 | `GET` | `/incidents` | Data Retrieval |
 | `DELETE` | `/incidents` | Data Management |
 | `GET` | `/incident/{id}` | Data Retrieval |
@@ -155,21 +154,7 @@ Upload a photo for Vision AI damage assessment.
 }
 ```
 
----
 
-### `POST /report/voice`
-Upload an audio recording for Whisper transcription + crisis analysis.
-
-**Form Data:**
-| Field | Type | Required |
-|---|---|---|
-| `audio` | File (M4A/WAV/OGG) | ✅ |
-| `image` | File (JPEG/PNG) | optional — dual-modal analysis |
-| `lat` | float | optional |
-| `lng` | float | optional |
-| `user_id` | string | optional |
-
----
 
 ### `GET /incidents`
 Returns all incidents or limits incidents to a user. Supports filtering.

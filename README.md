@@ -33,7 +33,7 @@ Pakistan's twin cities — **Rawalpindi** and **Islamabad** — face frequent lo
 **KHABAR** (meaning *News / Awareness* in Urdu) is an Agentic AI system that transforms raw citizen signals into automated, verified, and simulated emergency response pipelines — with a full-featured **AI-powered coordinator dashboard**.
 
 ```
-[Citizen Signal (Text/Voice/Photo)]
+[Citizen Signal (Text/Photo)]
          ↓
 [Verification Gate — Spam Filter]
          ↓
@@ -116,11 +116,10 @@ A **premium light-glass command center** built with Vite + React 18, running on 
 |---|---|
 | 🗺️ **MapWidget** | Live Leaflet map (CartoDB Positron tiles) — incident markers + resource/crew markers |
 | 📦 **ResourceManager** | Real-time resource table — status, type, quantity, assigned incident |
-| 🤖 **AgentPanel** | 4-agent pipeline detail + allocated resource badges per incident |
-| 💬 **AI Chatbot** | Floating Command Assistant — natural language coordinator commands via `POST /admin/chat` |
-| 📊 **CaseTracker** | P1–P5 priority distribution progress rings |
+| 🤖 **AgentPanel** | 4-agent pipeline detail + allocated resource badges + Case Analysis & Summary (English & Urdu summaries) |
+| 💬 **AI Chatbot** | Floating Command Assistant — natural language coordinator commands via `POST /admin/chat` (supports markdown) |
+| 📊 **CaseTracker** | P1–P5 priority distribution progress rings (active & complete statuses) |
 | 📈 **StatsGrid** | KPI cards — total incidents, active resources, alerts sent |
-| 🔔 **AlertsPanel** | Live FCM alert history |
 | 📋 **SituationSummary** | AI-generated situation narrative |
 
 **Admin Chatbot Commands (natural language → AI parses → executes):**
@@ -141,20 +140,20 @@ Built in Flutter/Dart with a premium dark-themed design system:
 
 | Screen | File | Function |
 |---|---|---|
-| Dashboard / Map | `map_screen.dart` | Live incidents map with polyline detours |
+| Dashboard / Map | `map_screen.dart` | Live incidents map with polyline detours and zoom buttons |
 | Login / Signup | `auth_screen.dart` | Glassmorphic login gate with on-device AI launcher |
-| Offline Chatbot | `offline_chat_screen.dart` | 100% offline emergency AI chat assistant |
+| Offline Chatbot | `offline_chat_screen.dart` | 100% offline emergency AI chat assistant (Qwen2.5 local model) |
 | Text Report | `text_signal_screen.dart` | Multi-language text crisis submission (stamps User ID) |
 | Photo Report | `photo_verification_screen.dart` | Camera → Vision AI analysis (stamps User ID) |
-| Voice Report | `voice_report_screen.dart` | Audio → Whisper transcription (stamps User ID) |
-| Incident Detail | `incident_tracker_screen.dart` | Agent trace timeline, dynamically calculated resource distance and ETA |
-| AI Chat | `ai_chat_screen.dart` | Online citizen AI chat (raises connection error when offline) |
+| Incident Detail | `incident_tracker_screen.dart` | Agent trace timeline, dynamically calculated resource distance and ETA (Help Delivery confirmed releases resources) |
+| AI Chat | `ai_chat_screen.dart` | Online citizen AI chat (raises connection error when offline, supports rich markdown) |
 | Live Alerts | `alerts_screen.dart` | Real-time FCM alerts feed |
 
 ### **Offline Mode (No Internet)**
 When a citizen has no internet connection, they can launch the **Offline AI Assistant** directly from the Login/Signup page.
 - Runs 100% on the device without checking backend server or network sockets.
-- Employs regex-based keyword parsing inside `LocalLlmService` to return localized safety guidelines and rescue hotline phone numbers.
+- Runs local quantized **Qwen2.5-0.5B-Instruct** GGUF model via `llama_cpp_dart` on background isolates (streams response tokens).
+- Falls back to a regex-based keyword parser inside `LocalLlmService` to return localized safety guidelines and rescue hotline phone numbers if model is not yet downloaded.
 - Supports English, Urdu script, and Roman Urdu with auto-detection and custom markdown rendering.
 
 ---
@@ -172,7 +171,6 @@ Swagger Docs: `http://127.0.0.1:8000/docs`
 | `POST` | `/auth/login` | Authenticate user and return profile |
 | `POST` | `/report/text` | Submit text crisis report (stamps User ID) |
 | `POST` | `/report/image` | Submit photo for Vision damage assessment |
-| `POST` | `/report/voice` | Submit audio for Speech transcription |
 | `GET` | `/incidents` | All active incidents (accepts `user_id` query to return user's 10 latest cases) |
 | `DELETE` | `/incidents` | Clear all incidents & reset resources (admin reset) |
 | `GET` | `/incident/{id}` | Single incident + full 4-agent trace |
@@ -239,9 +237,8 @@ CREATE TABLE IF NOT EXISTS resources (
 |---|---|
 | **AI Orchestration** | Python 3.12, FastAPI, Pydantic v2, CrewAI |
 | **Primary LLM** | AIML API → `google/gemini-2.5-flash` with `gpt-4o-mini` and Llama 3 fallbacks |
-| **Offline AI** | 100% On-Device client-side regex matcher (Urdu, English, Roman Urdu) |
+| **Offline AI** | On-Device local Qwen2.5-0.5B GGUF model via llama_cpp_dart (with regex fallback) |
 | **Vision AI** | AIML API Vision (OpenAI-compatible) |
-| **Speech AI** | OpenAI Whisper API (via AIML API endpoint) |
 | **Mobile Client** | Flutter 3.16+, Dart |
 | **Web Dashboard** | Vite + React 18 + Leaflet.js (CartoDB tiles) |
 | **Database** | Supabase Cloud PostgreSQL + In-Memory fallback |
@@ -275,15 +272,14 @@ h:\khabar\
 │   ├── alert_service.py       ← Firebase FCM v1 push notifications
 │   ├── maps_service.py        ← Google Maps geocoding & hospital search
 │   ├── gemini_vision.py       ← AIML Vision API (damage assessment)
-│   ├── gemini_speech.py       ← AIML Whisper API (audio transcription)
 │   └── automated_ingestion.py ← Background weather & traffic polling
 │
 ├── dashboard/                 ← React Web Dashboard (Vite + React 18)
 │   ├── src/
-│   │   ├── App.jsx            ← Main dashboard layout
+│   │   ├── App.jsx            ← Main dashboard layout (simulator/alerts tabs removed)
 │   │   ├── index.css          ← Light-glass premium CSS design system
 │   │   └── components/
-│   │       ├── Chatbot.jsx        ← AI Command Assistant (POST /admin/chat)
+│   │       ├── Chatbot.jsx        ← AI Command Assistant (POST /admin/chat, markdown support)
 │   │       ├── ResourceManager.jsx ← Real-time resource + assigned_incident table
 │   │       └── MapWidget.jsx      ← Live map
 │   └── package.json
@@ -293,10 +289,10 @@ h:\khabar\
 │   ├── api_config.dart        ← Base URL configurations
 │   ├── screens/               
 │   │   ├── auth_screen.dart           ← Login/Signup view with offline AI entry
-│   │   └── offline_chat_screen.dart   ← 100% offline chat assistant screen
+│   │   └── offline_chat_screen.dart   ← 100% offline chat assistant screen (download & stream Qwen2.5 GGUF)
 │   └── utils/
-│       ├── local_llm_service.dart     ← On-device offline keyword parser
-│       └── connectivity_service.dart  ← Network connectivity checks
+│       ├── local_llm_service.dart     ← Local LLM service (isolate manager for Qwen2.5, regex fallback)
+│       └── connectivity_service.dart  ← Network connectivity checks (debounced check)
 │
 ├── docs/                      ← Technical documentation
 ├── skills/                    ← Engineering workflows

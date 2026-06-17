@@ -20,8 +20,8 @@ Citizens register/login and report crises via a Flutter mobile app. All reports 
 │  │  └────┬─────┘  └────┬─────┘  │    │  └──────────┬───────────┘  │  │
 │  │       └──────┬──────┘        │    │             ▼              │  │
 │  │              ▼               │    │       LocalLlmService      │  │
-│  │      Flutter Mobile App      │    │  (On-Device Matcher: EN/   │  │
-│  │   (Profile ID linked via     │    │      UR/ROM Urdu)          │  │
+│  │      Flutter Mobile App      │    │ (Qwen2.5 GGUF local model /│  │
+│  │   (Profile ID linked via     │    │  fallback regex matcher)   │  │
 │  │       profile.json)          │    └────────────────────────────┘  │
 │  └──────────────┬───────────────┘                                    │
 └─────────────────┼────────────────────────────────────────────────────┘
@@ -79,23 +79,22 @@ Citizens register/login and report crises via a Flutter mobile app. All reports 
 
 **State Management:** Local `StatefulWidget` + `ChangeNotifier` (`LanguageProvider`)  
 **Networking:** `http` package — calls FastAPI backend  
-**Location & Sensors:** `geolocator` for GPS, `camera` for photo, `record` for audio  
+**Location & Sensors:** `geolocator` for GPS, `camera` for photo  
 **Session Management:** Profile local persistence via `profile.json` saved inside device directories on login/signup.
-
+ 
 **Key Screens:**
-
+ 
 | Screen | File | Description |
 |---|---|---|
 | Dashboard + Live Map | `lib/screens/map_screen.dart` | Incident and resource display |
 | Login / Signup | `lib/screens/auth_screen.dart` | User entrance card with offline assistant access |
-| Offline AI Assistant | `lib/screens/offline_chat_screen.dart` | 100% offline chat simulator |
+| Offline AI Assistant | `lib/screens/offline_chat_screen.dart` | 100% offline chat simulator with model download |
 | Text Crisis Report | `lib/screens/text_signal_screen.dart` | Submit text with location and user ID |
 | Photo Report (Vision) | `lib/screens/photo_verification_screen.dart` | Photo damage analysis |
-| Voice Report (Whisper) | `lib/screens/voice_report_screen.dart` | Speech signal transcription |
 | Incident Detail + Trace | `lib/screens/incident_tracker_screen.dart` | Step-by-step progress tracking and live distance/ETA |
 | AI Chat (Online) | `lib/screens/ai_chat_screen.dart` | Online assistant (raises error if connection drops) |
 | Live Alerts Feed | `lib/screens/alerts_screen.dart` | Broadcast warning history |
-
+ 
 **Offline Mode Architecture:**
 ```
 [Auth Screen Page] -> Clicking "Offline AI Assistant"
@@ -106,7 +105,8 @@ Citizens register/login and report crises via a Flutter mobile app. All reports 
                              ↓
                [LocalLlmService is invoked]
                              ↓
-On-device keyword matching (Urdu script, Roman Urdu, and English)
+         Runs Qwen2.5-0.5B-Instruct local GGUF model via llama_cpp_dart (on background isolates)
+         (Streams response tokens. Falls back to Regex Matcher if model is not yet downloaded)
                              ↓
      Returns rich safety instructions and helplines instantly
 ```
@@ -197,12 +197,11 @@ When an incident is updated to `"RESOLVED"` or `"CLOSED"` (via admin dashboard s
 
 | Component | Description |
 |---|---|
-| `Chatbot.jsx` | Floating AI Command Assistant — natural language coordinator commands via `POST /admin/chat` |
+| `Chatbot.jsx` | Floating AI Command Assistant — natural language coordinator commands via `POST /admin/chat` (supports markdown) |
 | `MapWidget.jsx` | Live Leaflet map — incident markers + resource/crew markers with coordinate fallback |
 | `ResourceManager.jsx` | Real-time resource table — status, type, quantity, assigned incident |
-| `AgentPanel.jsx` | 4-agent pipeline detail view + allocated resource badges per incident |
-| `CaseTracker.jsx` | P1–P5 priority distribution progress rings |
+| `AgentPanel.jsx` | 4-agent pipeline detail view + allocated resource badges + Case Analysis & Summary (English & Urdu) |
+| `CaseTracker.jsx` | P1–P5 priority distribution progress rings (processing & completed) |
 | `StatsGrid.jsx` | KPI cards — total incidents, active resources, alerts sent |
-| `AlertsPanel.jsx` | Live FCM alert history feed |
 | `SituationSummary.jsx` | AI-generated situation overview |
-| `Sidebar.jsx` | Navigation sidebar |
+| `Sidebar.jsx` | Navigation sidebar (clean sidebar with Alerts and Simulator removed) |
