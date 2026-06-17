@@ -115,6 +115,12 @@ class LocalLlmService {
 
       debugPrint("[LocalLlm] Initializing Llama Engine isolate with path: ${file.path}");
       
+      if (Platform.isAndroid) {
+        Llama.libraryPath = "libllama.so";
+      } else if (Platform.isIOS) {
+        Llama.libraryPath = "llama.framework/llama";
+      }
+
       final loadCommand = LlamaLoad(
         path: file.path,
         modelParams: ModelParams(),
