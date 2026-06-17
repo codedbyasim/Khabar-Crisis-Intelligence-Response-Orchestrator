@@ -239,6 +239,10 @@ class KhabarCrewOrchestrator:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "user_id": user_id,
         }
+        if memory.analysis_output:
+            payload["english_summary"] = getattr(memory.analysis_output, "english_summary", None)
+            payload["urdu_summary"] = getattr(memory.analysis_output, "urdu_summary", None)
+            
         if memory.detection_output:
             loc_dict = memory.detection_output.detected_location.dict()
             loc_dict["is_verified"] = getattr(memory.detection_output, "is_verified", True)

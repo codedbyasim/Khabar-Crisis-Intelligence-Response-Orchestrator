@@ -204,46 +204,43 @@ export default function AgentPanel({
         </div>
       </div>
 
-      {/* Before/After Simulation */}
-      {selectedIncident.before_state && selectedIncident.after_state && (
-        <div className="glass-card">
-          <div className="glass-card-header">
-            <span className="glass-card-title">
-              <CheckCircle size={18} style={{ color: 'var(--emerald)' }} /> Before / After Crisis Outcome
-            </span>
-          </div>
-          <div className="glass-card-body">
-            <div className="before-after-grid">
-              <div className="state-box">
-                <h4>⬛ Before Response</h4>
-                <div className="state-row"><span className="state-key">Status</span><span className="state-val">{selectedIncident.before_state.status || '—'}</span></div>
-                <div className="state-row"><span className="state-key">Active Units</span><span className="state-val">{Object.keys(selectedIncident.before_state.active_units || {}).length > 0 ? JSON.stringify(selectedIncident.before_state.active_units).replace(/"/g, '') : '0'}</span></div>
-                <div className="state-row"><span className="state-key">Alerts Sent</span><span className="state-val">{selectedIncident.before_state.public_alerts_sent || 0}</span></div>
-                <div className="state-row"><span className="state-key">Roads Closed</span><span className="state-val">{(selectedIncident.before_state.closed_roads || []).length}</span></div>
-                <div className="state-row"><span className="state-key">Tickets</span><span className="state-val">{(selectedIncident.before_state.tickets || []).length}</span></div>
+      {/* Case Analysis & Summary */}
+      <div className="glass-card">
+        <div className="glass-card-header">
+          <span className="glass-card-title">
+            <FileText size={18} style={{ color: 'var(--cyan)' }} /> Case Analysis & Summary
+          </span>
+        </div>
+        <div className="glass-card-body">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            <div style={{ padding: '12px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-base)' }}>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--cyan)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px' }}>
+                English Case Summary
               </div>
+              <p style={{ fontSize: '13px', lineHeight: '1.6', color: 'var(--text-light)', margin: 0 }}>
+                {selectedIncident.english_summary || (
+                  <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                    ⌛ Impact analysis pending (waiting for Analysis Agent)...
+                  </span>
+                )}
+              </p>
+            </div>
 
-              <div className="arrow-divider"><ArrowRight size={20} /></div>
-
-              {(() => {
-                const diffKeys = selectedIncident.state_diff?.changed_keys || [];
-                const a = selectedIncident.after_state;
-                const isChanged = (key) => diffKeys.includes(key);
-                return (
-                  <div className="state-box after">
-                    <h4>✅ After Response</h4>
-                    <div className="state-row"><span className="state-key">Status</span><span className={`state-val ${isChanged('status') ? 'changed' : ''}`}>{a.status || '—'}</span></div>
-                    <div className="state-row"><span className="state-key">Active Units</span><span className={`state-val ${isChanged('active_units') ? 'changed' : ''}`}>{Object.keys(a.active_units || {}).length > 0 ? JSON.stringify(a.active_units).replace(/"/g, '') : '0'}</span></div>
-                    <div className="state-row"><span className="state-key">Alerts Sent</span><span className={`state-val ${isChanged('public_alerts_sent') ? 'changed' : ''}`}>{a.public_alerts_sent || 0}</span></div>
-                    <div className="state-row"><span className="state-key">Roads Closed</span><span className={`state-val ${isChanged('closed_roads') ? 'changed' : ''}`}>{(a.closed_roads || []).length}</span></div>
-                    <div className="state-row"><span className="state-key">Tickets</span><span className={`state-val ${isChanged('tickets') ? 'changed' : ''}`}>{(a.tickets || []).length}</span></div>
-                  </div>
-                );
-              })()}
+            <div style={{ padding: '12px 16px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--bg-base)' }}>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--emerald)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: '6px', textAlign: 'right' }}>
+                خلاصہ (Urdu Case Summary)
+              </div>
+              <p dir="rtl" style={{ fontSize: '14px', lineHeight: '1.7', color: 'var(--text-light)', margin: 0, fontFamily: 'Noto Nastaliq Urdu, system-ui', fontWeight: '500' }}>
+                {selectedIncident.urdu_summary || (
+                  <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '12px' }}>
+                    ⌛ تجزیہ زیرِ کار ہے (انتظار فرمائیں)...
+                  </span>
+                )}
+              </p>
             </div>
           </div>
         </div>
-      )}
+      </div>
 
       {/* AI Trace Console */}
       <div className="glass-card">

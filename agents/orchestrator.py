@@ -178,6 +178,10 @@ class KhabarOrchestrator:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "user_id": user_id,
         }
+        if memory.analysis_output:
+            payload["english_summary"] = getattr(memory.analysis_output, "english_summary", None)
+            payload["urdu_summary"] = getattr(memory.analysis_output, "urdu_summary", None)
+            
         # Add detection info if available
         if memory.detection_output:
             loc_dict = memory.detection_output.detected_location.dict()

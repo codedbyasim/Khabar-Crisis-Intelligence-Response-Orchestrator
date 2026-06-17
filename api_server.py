@@ -540,6 +540,9 @@ async def get_incidents(user_id: Optional[str] = None):
                 "confidence": memory.detection_output.confidence_score,
                 "location": loc_dict,
             })
+        if memory.analysis_output:
+            entry["english_summary"] = getattr(memory.analysis_output, "english_summary", None)
+            entry["urdu_summary"] = getattr(memory.analysis_output, "urdu_summary", None)
         if memory.execution_output:
             entry["before_state"] = memory.execution_output.before_state.model_dump()
             entry["after_state"] = memory.execution_output.after_state.model_dump()
