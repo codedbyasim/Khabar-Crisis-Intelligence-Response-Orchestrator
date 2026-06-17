@@ -61,6 +61,7 @@ class IncidentMemory(BaseModel):
     execution_output: Optional[Any] = None
     system_state: SystemState
     traces: List[str] = []
+    generated_alerts: List[str] = []
     status: str = "INGESTED"
 
     class Config:
@@ -264,7 +265,14 @@ class KhabarCrewOrchestrator:
             payload["before_state"]      = memory.execution_output.before_state.dict()
             payload["after_state"]       = memory.execution_output.after_state.dict()
             payload["state_diff"]        = memory.execution_output.system_state_diff.dict()
-            payload["generated_alerts"]  = memory.execution_output.generated_alerts
+            
+        # Collect and merge generated alerts
+        alerts_list = list(memory.generated_alerts)
+        if memory.execution_output and getattr(memory.execution_output, "generated_alerts", None):
+            for alert in memory.execution_output.generated_alerts:
+                if alert not in alerts_list:
+                    alerts_list.append(alert)
+        payload["generated_alerts"] = alerts_list
 
         self.firestore.save_incident(memory.incident_id, payload)
         
@@ -526,6 +534,12 @@ class KhabarCrewOrchestrator:
                     incident_id=memory.incident_id,
                 )
                 memory.system_state.public_alerts_sent += 1
+                if not hasattr(memory, "generated_alerts") or memory.generated_alerts is None:
+                    memory.generated_alerts = []
+                if "urdu_message" in alert_result and alert_result["urdu_message"] not in memory.generated_alerts:
+                    memory.generated_alerts.append(alert_result["urdu_message"])
+                if "english_message" in alert_result and alert_result["english_message"] not in memory.generated_alerts:
+                    memory.generated_alerts.append(alert_result["english_message"])
                 self.log_trace(
                     memory, "EXECUTION",
                     f"✅ Tools executed | Alert sent to {alert_result['recipient_count']} users | "

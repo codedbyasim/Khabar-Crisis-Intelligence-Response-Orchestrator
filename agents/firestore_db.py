@@ -114,6 +114,12 @@ class KhabarFirestore:
             if not cur.fetchone():
                 logging.info("[Supabase DB] Adding urdu_summary column to incidents table...")
                 cur.execute("ALTER TABLE incidents ADD COLUMN urdu_summary TEXT;")
+
+            # Check for generated_alerts column in incidents table
+            cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'incidents' AND column_name = 'generated_alerts';")
+            if not cur.fetchone():
+                logging.info("[Supabase DB] Adding generated_alerts column to incidents table...")
+                cur.execute("ALTER TABLE incidents ADD COLUMN generated_alerts TEXT;")
                 
             conn.commit()
             cur.close()
@@ -279,7 +285,8 @@ class KhabarFirestore:
             "public_alerts_sent": data.get("public_alerts_sent") or 0,
             "user_id": data.get("user_id"),
             "english_summary": data.get("english_summary") or (_IN_MEMORY_INCIDENTS.get(incident_id, {}).get("english_summary")),
-            "urdu_summary": data.get("urdu_summary") or (_IN_MEMORY_INCIDENTS.get(incident_id, {}).get("urdu_summary"))
+            "urdu_summary": data.get("urdu_summary") or (_IN_MEMORY_INCIDENTS.get(incident_id, {}).get("urdu_summary")),
+            "generated_alerts": data.get("generated_alerts") or (_IN_MEMORY_INCIDENTS.get(incident_id, {}).get("generated_alerts") or [])
         }
         _IN_MEMORY_INCIDENTS[incident_id] = memory_record
 
@@ -293,14 +300,15 @@ class KhabarFirestore:
             before_json = json.dumps(data.get("before_state") or {})
             after_json = json.dumps(data.get("after_state") or {})
             diff_json = json.dumps(data.get("state_diff") or {})
+            alerts_json = json.dumps(memory_record["generated_alerts"])
             
             cur.execute("""
             INSERT INTO incidents (
                 incident_id, incident_type, lat, lng, priority, status, confidence,
                 location, traces, before_state, after_state, state_diff, public_alerts_sent, user_id,
-                english_summary, urdu_summary
+                english_summary, urdu_summary, generated_alerts
             )
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (incident_id) DO UPDATE SET
                 incident_type = EXCLUDED.incident_type,
                 lat = EXCLUDED.lat,
@@ -316,7 +324,8 @@ class KhabarFirestore:
                 public_alerts_sent = EXCLUDED.public_alerts_sent,
                 user_id = COALESCE(EXCLUDED.user_id, incidents.user_id),
                 english_summary = COALESCE(EXCLUDED.english_summary, incidents.english_summary),
-                urdu_summary = COALESCE(EXCLUDED.urdu_summary, incidents.urdu_summary);
+                urdu_summary = COALESCE(EXCLUDED.urdu_summary, incidents.urdu_summary),
+                generated_alerts = COALESCE(EXCLUDED.generated_alerts, incidents.generated_alerts);
             """, (
                 incident_id,
                 memory_record["incident_type"],
@@ -333,7 +342,8 @@ class KhabarFirestore:
                 memory_record["public_alerts_sent"],
                 memory_record["user_id"],
                 memory_record["english_summary"],
-                memory_record["urdu_summary"]
+                memory_record["urdu_summary"],
+                alerts_json
             ))
             
             conn.commit()
@@ -351,7 +361,7 @@ class KhabarFirestore:
             cur.execute("""
                 SELECT incident_id, incident_type, lat, lng, priority, status, confidence,
                        location, traces, before_state, after_state, state_diff, public_alerts_sent, user_id,
-                       created_at, english_summary, urdu_summary
+                       created_at, english_summary, urdu_summary, generated_alerts
                 FROM incidents WHERE incident_id = %s;
             """, (incident_id,))
             row = cur.fetchone()
@@ -386,7 +396,8 @@ class KhabarFirestore:
                     "user_id": row[13],
                     "created_at": row[14].isoformat() if row[14] else None,
                     "english_summary": row[15],
-                    "urdu_summary": row[16]
+                    "urdu_summary": row[16],
+                    "generated_alerts": parse_field(row[17]) if len(row) > 17 else []
                 }
         except Exception as e:
             if not isinstance(e, ConnectionAbortedError):
@@ -407,7 +418,7 @@ class KhabarFirestore:
                 cur.execute("""
                     SELECT incident_id, incident_type, lat, lng, priority, status, confidence,
                            location, traces, before_state, after_state, state_diff, public_alerts_sent, user_id,
-                           created_at, english_summary, urdu_summary
+                           created_at, english_summary, urdu_summary, generated_alerts
                     FROM incidents 
                     WHERE user_id = %s
                     ORDER BY created_at DESC;
@@ -416,7 +427,7 @@ class KhabarFirestore:
                 cur.execute("""
                     SELECT incident_id, incident_type, lat, lng, priority, status, confidence,
                            location, traces, before_state, after_state, state_diff, public_alerts_sent, user_id,
-                           created_at, english_summary, urdu_summary
+                           created_at, english_summary, urdu_summary, generated_alerts
                     FROM incidents 
                     ORDER BY created_at DESC;
                 """)
@@ -452,7 +463,8 @@ class KhabarFirestore:
                     "user_id": row[13],
                     "created_at": row[14].isoformat() if row[14] else None,
                     "english_summary": row[15],
-                    "urdu_summary": row[16]
+                    "urdu_summary": row[16],
+                    "generated_alerts": parse_field(row[17]) if len(row) > 17 else []
                 })
             return incidents
         except Exception as e:

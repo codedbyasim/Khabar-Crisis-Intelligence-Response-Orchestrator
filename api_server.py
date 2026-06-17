@@ -543,6 +543,15 @@ async def get_incidents(user_id: Optional[str] = None):
         if memory.analysis_output:
             entry["english_summary"] = getattr(memory.analysis_output, "english_summary", None)
             entry["urdu_summary"] = getattr(memory.analysis_output, "urdu_summary", None)
+        
+        # Collect and merge generated alerts for entry
+        alerts_list = list(memory.generated_alerts)
+        if memory.execution_output and getattr(memory.execution_output, "generated_alerts", None):
+            for alert in memory.execution_output.generated_alerts:
+                if alert not in alerts_list:
+                    alerts_list.append(alert)
+        entry["generated_alerts"] = alerts_list
+
         if memory.execution_output:
             entry["before_state"] = memory.execution_output.before_state.model_dump()
             entry["after_state"] = memory.execution_output.after_state.model_dump()
@@ -653,6 +662,14 @@ async def get_incident(incident_id: str):
             result["before_state"] = memory.execution_output.before_state.dict()
             result["after_state"] = memory.execution_output.after_state.dict()
             result["state_diff"] = memory.execution_output.system_state_diff.dict()
+        
+        # Collect and merge generated alerts for entry
+        alerts_list = list(memory.generated_alerts)
+        if memory.execution_output and getattr(memory.execution_output, "generated_alerts", None):
+            for alert in memory.execution_output.generated_alerts:
+                if alert not in alerts_list:
+                    alerts_list.append(alert)
+        result["generated_alerts"] = alerts_list
         return result
 
     # Fall back to Firestore
@@ -834,6 +851,10 @@ async def execute_action(request: ActionRequest):
         msg = request.message or f"Emergency alert for incident {request.incident_id}"
         alert_result = alert_service.send_alert(msg, request.location or "Pakistan", incident_id=request.incident_id)
         memory.system_state.public_alerts_sent += 1
+        if not hasattr(memory, "generated_alerts") or memory.generated_alerts is None:
+            memory.generated_alerts = []
+        if msg not in memory.generated_alerts:
+            memory.generated_alerts.append(msg)
         result = alert_result
 
     elif action_type == "reroute":
