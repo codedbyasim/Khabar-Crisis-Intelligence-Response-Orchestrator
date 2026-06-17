@@ -212,7 +212,6 @@ export default function App() {
     resources: 'Resource Management',
     alerts: 'Alerts & Warnings',
     cases: 'Case Tracker',
-    simulator: 'Crisis Simulator',
   };
 
   return (
@@ -418,35 +417,6 @@ export default function App() {
               selectedId={selectedId}
               onSelectIncident={(id) => { handleSelectIncident(id); setActiveSection('agents'); }}
             />
-          )}
-
-          {/* ═══ SIMULATOR VIEW ═══ */}
-          {activeSection === 'simulator' && (
-            <div className="glass-card">
-              <div className="glass-card-header">
-                <span className="glass-card-title">
-                  <Send size={18} style={{ color: 'var(--cyan)' }} /> Crisis Scenario Injector
-                </span>
-              </div>
-              <div className="glass-card-body">
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  {SCENARIOS.map(sc => (
-                    <button
-                      key={sc.id}
-                      className={`inject-btn btn-${sc.priority.toLowerCase()}`}
-                      disabled={injectingId !== null}
-                      onClick={() => handleInjectScenario(sc)}
-                    >
-                      <span className="priority">
-                        {injectingId === sc.id ? "SENDING..." : sc.priority}
-                      </span>
-                      <span className="sc-title">{sc.title}</span>
-                      <span className="sc-desc">{sc.desc}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
           )}
 
         </div>

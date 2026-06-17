@@ -6,7 +6,6 @@ import {
   Package,
   Bell,
   ClipboardList,
-  Zap,
   Settings
 } from 'lucide-react';
 
@@ -17,7 +16,6 @@ const NAV_ITEMS = [
   { id: 'resources', label: 'Resources', icon: Package },
   { id: 'alerts', label: 'Alerts', icon: Bell },
   { id: 'cases', label: 'Case Tracker', icon: ClipboardList },
-  { id: 'simulator', label: 'Simulator', icon: Zap },
 ];
 
 export default function Sidebar({ activeSection, onSectionChange, alertCount }) {
