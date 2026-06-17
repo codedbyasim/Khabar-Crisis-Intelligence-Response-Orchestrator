@@ -575,6 +575,20 @@ class KhabarFirestore:
             if not isinstance(e, ConnectionAbortedError):
                 logging.warning(f"[Supabase DB] Postgres offline/unreachable. Updated resource {resource_id} to {status} in local memory. Error: {e}")
 
+    def update_document(self, collection_name: str, doc_id: str, data: dict):
+        logging.info(f"[Supabase DB] update_document called for {collection_name} / {doc_id} with keys {list(data.keys())}")
+        if collection_name == "incidents":
+            existing = self.get_incident(doc_id)
+            if existing:
+                existing.update(data)
+                self.save_incident(doc_id, existing)
+            else:
+                self.save_incident(doc_id, data)
+        elif collection_name == "resources":
+            status = data.get("status")
+            assigned_incident = data.get("assigned_incident")
+            self.update_resource_status(doc_id, status, assigned_incident)
+
     def clear_all_data(self):
         """
         Clear all incidents from Postgres and local memory, and reset resources status to available.

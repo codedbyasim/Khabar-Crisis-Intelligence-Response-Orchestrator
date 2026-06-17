@@ -302,14 +302,7 @@ class _AiChatScreenState extends State<AiChatScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              msg.text,
-              style: GoogleFonts.nunito(
-                color: msg.isUser ? Colors.white : kTextDark,
-                fontSize: 14.5,
-                height: 1.4,
-              ),
-            ),
+            _buildMessageContent(msg.text, msg.isUser),
             const SizedBox(height: 6),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -436,5 +429,89 @@ class _AiChatScreenState extends State<AiChatScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildMessageContent(String text, bool isUser) {
+    final List<String> lines = text.split('\n');
+    final textColor = isUser ? Colors.white : kTextDark;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: lines.map((line) {
+        if (line.trim().startsWith('* ') || line.trim().startsWith('- ')) {
+          // Bullet point line
+          final String cleanLine = line.trim().substring(2);
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 6.0, left: 6.0),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "• ",
+                  style: TextStyle(
+                    color: isUser ? Colors.white70 : kPrimaryTeal,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                Expanded(
+                  child: RichText(
+                    text: TextSpan(
+                      style: GoogleFonts.nunito(
+                        color: textColor,
+                        fontSize: 14.5,
+                        height: 1.4,
+                      ),
+                      children: _parseBoldSpans(cleanLine, isUser),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        } else {
+          // Regular line
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 6.0),
+            child: RichText(
+              text: TextSpan(
+                style: GoogleFonts.nunito(
+                  color: textColor,
+                  fontSize: 14.5,
+                  height: 1.4,
+                ),
+                children: _parseBoldSpans(line, isUser),
+              ),
+            ),
+          );
+        }
+      }).toList(),
+    );
+  }
+
+  List<TextSpan> _parseBoldSpans(String text, bool isUser) {
+    final List<TextSpan> spans = [];
+    final RegExp exp = RegExp(r'\*\*(.*?)\*\*');
+    int start = 0;
+
+    for (final Match match in exp.allMatches(text)) {
+      if (match.start > start) {
+        spans.add(TextSpan(text: text.substring(start, match.start)));
+      }
+      spans.add(TextSpan(
+        text: match.group(1),
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: isUser ? Colors.white : kPrimaryTeal,
+        ),
+      ));
+      start = match.end;
+    }
+
+    if (start < text.length) {
+      spans.add(TextSpan(text: text.substring(start)));
+    }
+
+    return spans;
   }
 }

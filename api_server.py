@@ -142,7 +142,6 @@ async def root():
         "endpoints": {
             "POST /report/text":     "Submit text crisis report (Urdu/English/Roman Urdu)",
             "POST /report/image":    "Submit photo for Gemini Vision damage assessment",
-            "POST /report/voice":    "Submit audio for Gemini Speech transcription",
             "GET  /incidents":       "Get all active incidents with P1-P5 priority queue",
             "GET  /incident/{id}":   "Get single incident with full agent trace",
             "GET  /resources":       "Get current resource inventory & rescue team status",
@@ -383,106 +382,6 @@ async def report_image(
         "poll_url": f"/incident/{signal_id}",
     }
 
-
-# ════════════════════════════════════════════
-# ENDPOINT 3 — POST /report/voice
-# FR-03: Gemini Speech transcription
-# ════════════════════════════════════════════
-@app.post("/report/voice")
-async def report_voice(
-    audio: UploadFile = File(...),
-    image: Optional[UploadFile] = File(default=None),
-    lat: float = Form(default=33.6844),
-    lng: float = Form(default=73.0479),
-    user_id: Optional[str] = Form(default=None),
-    background_tasks: BackgroundTasks = None,
-):
-    """
-    Submit audio recording with optional image for Gemini multilingual transcription & vision analysis.
-    FR-03: Supports Urdu, Punjabi, Sindhi, Roman Urdu, English.
-    """
-    signal_id = f"SIG-{int(datetime.now().timestamp())}-VOI"
-    audio_bytes = await audio.read()
-    mime_type = audio.content_type or "audio/wav"
-
-    # Run Gemini Speech transcription
-    try:
-        speech_result = await asyncio.to_thread(speech.transcribe_audio, audio_bytes, mime_type)
-    except Exception as e:
-        logging.error(f"Speech transcription error: {e}")
-        speech_result = {
-            "transcription_english": f"Transcription failed: {str(e)}",
-            "detected_language": "unknown",
-            "crisis_detected": True,
-            "crisis_type": "unknown",
-        }
-
-    # Run optional image analysis
-    vision_result = None
-    if image is not None:
-        try:
-            image_bytes = await image.read()
-            img_mime = image.content_type or "image/jpeg"
-            vision_result = await asyncio.to_thread(vision.analyze_crisis_image, image_bytes, img_mime)
-        except Exception as e:
-            logging.error(f"Image analysis during voice report failed: {e}")
-            vision_result = {"description": f"Failed to analyze image: {e}"}
-
-    # Use English transcription as pipeline input
-    transcribed = speech_result.get("transcription_english", "")
-    combined = (
-        f"[VOICE REPORT] Language: {speech_result.get('detected_language', 'unknown')}\n"
-        f"Original: {speech_result.get('transcription_original', '')}\n"
-        f"English: {transcribed}\n"
-        f"Crisis keywords: {', '.join(speech_result.get('crisis_keywords', []))}"
-    )
-
-    if vision_result:
-        combined += (
-            f"\n\n[ATTACHED IMAGE ANALYSIS]\n"
-            f"Visual Details: {vision_result.get('description', '')}\n"
-            f"Crisis: {vision_result.get('crisis_type', 'unknown')} | "
-            f"Severity: {vision_result.get('severity', 'unknown')} | "
-            f"Detected: {', '.join(vision_result.get('detected_elements', []))}"
-        )
-
-    signal = RawCrisisSignal(
-        signal_id=signal_id,
-        source_type=InputSourceType.VOICE_TRANSCRIPTION,
-        raw_content=combined,
-        timestamp=datetime.now(timezone.utc).isoformat(),
-        metadata={"lat": lat, "lng": lng, "speech_result": speech_result, "vision_result": vision_result, "user_id": user_id},
-    )
-
-    background_tasks.add_task(orchestrator.process_incident, signal)
-    orchestrator.memory_block.register_incident(signal)
-
-    await asyncio.to_thread(firestore.save_incident, signal_id, {
-        "incident_id": signal_id,
-        "status": "PROCESSING",
-        "source": "voice",
-        "speech_analysis": speech_result,
-        "vision_analysis": vision_result,
-        "lat": lat, "lng": lng,
-        "user_id": user_id,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "traces": [
-            f"[{datetime.now(timezone.utc).isoformat()}] [SPEECH] Gemini transcribed: "
-            f"lang={speech_result.get('detected_language')} | "
-            f"crisis={speech_result.get('crisis_detected')} | "
-            f"\"{transcribed[:60]}...\"" + (f" | Image Attached and analyzed." if vision_result else "")
-        ],
-    })
-
-    return {
-        "success": True,
-        "incident_id": signal_id,
-        "status": "PROCESSING",
-        "speech_analysis": speech_result,
-        "vision_analysis": vision_result,
-        "message": "Audio transcribed by Gemini Speech. AI pipeline started.",
-        "poll_url": f"/incident/{signal_id}",
-    }
 
 
 # ════════════════════════════════════════════
@@ -1562,8 +1461,39 @@ RULES:
             
             else:
                 inc_id = args.get("incident_id")
-                memory = orchestrator.memory_block.get_incident(inc_id) if inc_id else None
-                
+                memory = None
+                if inc_id:
+                    memory = orchestrator.memory_block.get_incident(inc_id)
+                    if not memory:
+                        # Reconstruct IncidentMemory from PostgreSQL/Supabase database
+                        db_data = db_client.get_incident(inc_id)
+                        if db_data:
+                            from crew_orchestrator import RawCrisisSignal, InputSourceType
+                            from tool_system import SystemState
+                            
+                            raw_signal = RawCrisisSignal(
+                                signal_id=inc_id,
+                                source_type=InputSourceType.TEXT_ROMAN_URDU,
+                                raw_content="",
+                                metadata={"lat": db_data.get("lat"), "lng": db_data.get("lng"), "user_id": db_data.get("user_id")}
+                            )
+                            
+                            after_state = db_data.get("after_state") or {}
+                            system_state = SystemState(
+                                incident_id=inc_id,
+                                status=db_data.get("status") or "OPEN",
+                                active_units=after_state.get("active_units") or {},
+                                allocated_supplies=after_state.get("allocated_supplies") or {},
+                                closed_roads=after_state.get("closed_roads") or db_data.get("closed_roads") or [],
+                                public_alerts_sent=db_data.get("public_alerts_sent") or 0,
+                                tickets=after_state.get("tickets") or [],
+                            )
+                            
+                            memory = orchestrator.memory_block.register_incident(raw_signal)
+                            memory.system_state = system_state
+                            memory.traces = db_data.get("traces") or []
+                            memory.generated_alerts = db_data.get("generated_alerts") or []
+
                 if not inc_id:
                     command_executed = {
                         "action_type": action_type,
@@ -1574,7 +1504,7 @@ RULES:
                     command_executed = {
                         "action_type": action_type,
                         "success": False,
-                        "detail": f"Failed: Incident ID '{inc_id}' is not active in memory queue."
+                        "detail": f"Failed: Incident ID '{inc_id}' not found in database or memory."
                     }
                 else:
                     if action_type == "dispatch":

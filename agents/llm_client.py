@@ -74,8 +74,8 @@ def generate_local_fallback(system_prompt: str, user_prompt: str, schema_dict: D
             "response_difficulty": "HARD",
             "congestion_level": "GRIDLOCK",
             "analysis_reasoning": "Substantial rainfall has blocked major travel paths. First responders need dewatering assets.",
-            "english_summary": "Major urban corridor severely impacted; emergency teams dispatched to clear obstructions.",
-            "urdu_summary": "اہم شہری شاہراہ شدید متاثر؛ پانی نکالنے اور امدادی کارروائیوں کا آغاز کر دیا گیا ہے۔"
+            "english_summary": "Major urban corridor severely impacted due to rainfall/accumulation; high potential hazard detected.",
+            "urdu_summary": "شدید بارش اور پانی جمع ہونے کی وجہ سے اہم شہری شاہراہ شدید متاثر ہوئی ہے؛ ہنگامی خطرے کا الرٹ۔"
         })
 
     # 3. Planning Agent fallback

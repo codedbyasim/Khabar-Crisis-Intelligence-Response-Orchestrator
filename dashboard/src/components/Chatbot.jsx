@@ -25,6 +25,56 @@ export default function Chatbot({ apiBase, onActionExecuted }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  const formatMessageContent = (content) => {
+    if (!content) return '';
+    const lines = content.split('\n');
+    return lines.map((line, index) => {
+      let formattedLine = line;
+      const isBullet = line.trim().startsWith('* ') || line.trim().startsWith('- ');
+      const isCustomBullet = line.trim().startsWith('🔹');
+      
+      if (isBullet) {
+        formattedLine = line.trim().substring(2);
+      } else if (isCustomBullet) {
+        formattedLine = line.trim().substring(1);
+      }
+      
+      // Parse bold tags: **text** -> <strong>text</strong>
+      const boldRegex = /\*\*(.*?)\*\*/g;
+      const parts = [];
+      let lastIndex = 0;
+      let match;
+      
+      while ((match = boldRegex.exec(formattedLine)) !== null) {
+        parts.push(formattedLine.substring(lastIndex, match.index));
+        parts.push(<strong key={match.index}>{match[1]}</strong>);
+        lastIndex = boldRegex.lastIndex;
+      }
+      parts.push(formattedLine.substring(lastIndex));
+      
+      if (isBullet) {
+        return (
+          <li key={index} style={{ marginLeft: '16px', listStyleType: 'disc', marginTop: '4px' }}>
+            {parts}
+          </li>
+        );
+      } else if (isCustomBullet) {
+        return (
+          <div key={index} style={{ display: 'flex', alignItems: 'flex-start', marginTop: '4px' }}>
+            <span style={{ marginRight: '6px' }}>🔹</span>
+            <div>{parts}</div>
+          </div>
+        );
+      } else {
+        return (
+          <div key={index} style={{ minHeight: '1.2em', marginTop: index > 0 ? '4px' : '0' }}>
+            {parts}
+          </div>
+        );
+      }
+    });
+  };
+
   useEffect(() => {
     if (isOpen) {
       scrollToBottom();
@@ -139,7 +189,7 @@ export default function Chatbot({ apiBase, onActionExecuted }) {
             {messages.map(msg => (
               <div key={msg.id} style={{ display: 'flex', flexDirection: 'column', width: '100%' }}>
                 <div className={`chatbot-message ${msg.role === 'user' ? 'chatbot-msg-user' : 'chatbot-msg-assistant'}`}>
-                  {msg.content}
+                  {formatMessageContent(msg.content)}
 
                   {/* Render Command Result if present */}
                   {msg.command && (

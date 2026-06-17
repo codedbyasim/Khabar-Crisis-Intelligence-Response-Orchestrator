@@ -20,9 +20,6 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   String _selectedLanguage = 'English';
-  double _alertRadius = 5.0;
-  bool _firebaseAlertsEnabled = true;
-  bool _antigravityAiEnabled = true;
   String _selectedRegion = 'Islamabad, Capital Territory';
 
   late TextEditingController _nameController;
@@ -519,71 +516,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 LanguageProvider().setLanguage(value);
               }
             },
-          ),
-          const Divider(),
-
-          // 3. Notification Zones Radius
-          _buildSectionHeader(AppTranslations.t('notification_radius', _selectedLanguage)),
-          Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 8.0,
-            ),
-            child: Row(
-              children: [
-                Text(
-                  AppTranslations.t('alert_radius', _selectedLanguage),
-                  style: const TextStyle(color: kTextDark, fontSize: 16),
-                ),
-                Expanded(
-                  child: Slider(
-                    value: _alertRadius,
-                    min: 1,
-                    max: 10,
-                    divisions: 9,
-                    activeColor: kPrimaryTeal,
-                    inactiveColor: Colors.teal.shade100,
-                    label: '${_alertRadius.toInt()} km',
-                    onChanged: (value) => setState(() => _alertRadius = value),
-                  ),
-                ),
-                SizedBox(
-                  width: 50,
-                  child: Text(
-                    '${_alertRadius.toInt()} km',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: kPrimaryTeal,
-                      fontSize: 16,
-                    ),
-                    textAlign: TextAlign.right,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Divider(),
-
-          // 4. Knowledge Base Connections
-          _buildSectionHeader(AppTranslations.t('knowledge_base', _selectedLanguage)),
-          SwitchListTile(
-            title: const Text(
-              'Firebase Alerts Feed',
-              style: TextStyle(color: kTextDark),
-            ),
-            value: _firebaseAlertsEnabled,
-            activeThumbColor: kPrimaryTeal,
-            onChanged: (value) =>
-                setState(() => _firebaseAlertsEnabled = value),
-          ),
-          SwitchListTile(
-            title: const Text(
-              'Antigravity AI Pipeline',
-              style: TextStyle(color: kTextDark),
-            ),
-            value: _antigravityAiEnabled,
-            activeThumbColor: kPrimaryTeal,
-            onChanged: (value) => setState(() => _antigravityAiEnabled = value),
           ),
           const Divider(),
 

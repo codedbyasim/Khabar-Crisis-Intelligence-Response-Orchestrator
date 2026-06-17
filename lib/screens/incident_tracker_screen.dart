@@ -44,10 +44,8 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
     
     if (widget.incidentData != null) {
       _liveIncidentData = widget.incidentData;
-      final status = _liveIncidentData!['status']?.toString().toUpperCase() ?? '';
-      if (status == 'RESOLVED' || status == 'CLOSED' || status == 'COMPLETED' || status == 'REJECTED') {
-        _isHelpDelivered = true;
-      }
+      // Check if backend already confirmed help delivery
+      _isHelpDelivered = _checkIfHelpDelivered(_liveIncidentData);
     }
     
     _fetchLatestIncident();
@@ -94,15 +92,13 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
 
       if (response.statusCode == 200) {
         if (mounted) {
-          setState(() {
-            _isHelpDelivered = true;
-          });
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Help delivery confirmed successfully!'),
               backgroundColor: Colors.green,
             ),
           );
+          // Immediately fetch latest data to sync confirmation
           _pollSpecificIncident(incidentId);
         }
       } else {
@@ -142,16 +138,39 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
         if (mounted) {
           setState(() {
             _liveIncidentData = data;
-            final status = data['status']?.toString().toUpperCase() ?? '';
-            if (status == 'RESOLVED' || status == 'CLOSED' || status == 'COMPLETED' || status == 'REJECTED') {
-              _isHelpDelivered = true;
-            }
+            // Sync help delivery status from backend
+            _isHelpDelivered = _checkIfHelpDelivered(data);
           });
         }
       }
     } catch (e) {
       // Ignore polling errors to not interrupt the UI aggressively
     }
+  }
+
+  /// Check if help delivery has been confirmed based on incident data
+  bool _checkIfHelpDelivered(Map<String, dynamic>? data) {
+    if (data == null) return false;
+    
+    // Check explicit field first
+    if (data['help_delivered'] == true) return true;
+    if (data['confirmed'] == true) return true;
+    
+    // Check status field
+    final status = data['status']?.toString().toUpperCase() ?? '';
+    if (status == 'RESOLVED' || status == 'CLOSED' || status == 'COMPLETED' || status == 'REJECTED') {
+      return true;
+    }
+    
+    // Check after_state if present
+    final afterState = data['after_state'] as Map<String, dynamic>?;
+    if (afterState != null) {
+      if (afterState['help_delivered'] == true || afterState['confirmed'] == true) {
+        return true;
+      }
+    }
+    
+    return false;
   }
 
   Future<void> _fetchLatestIncident() async {
@@ -171,10 +190,7 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
           setState(() {
             if (incidents.isNotEmpty) {
               _liveIncidentData = incidents.first; // Latest active incident
-              final status = _liveIncidentData!['status']?.toString().toUpperCase() ?? '';
-              if (status == 'RESOLVED' || status == 'CLOSED' || status == 'COMPLETED' || status == 'REJECTED') {
-                _isHelpDelivered = true;
-              }
+              _isHelpDelivered = _checkIfHelpDelivered(_liveIncidentData);
             } else {
               _liveIncidentData = null;
             }
@@ -1046,6 +1062,10 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
         phase = match.group(2) ?? 'SYSTEM';
         msg = match.group(3) ?? trace;
       }
+      
+      // Convert technical message to user-friendly message
+      final userFriendlyMsg = _simplifyTraceMessage(msg, phase);
+      
       final color = _phaseColor(phase);
       widgets.add(_buildTimelineStep(
         isFirst: i == 0,
@@ -1053,10 +1073,10 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
         color: color,
         agentName: phase,
         content: Text(
-          msg,
-          style: const TextStyle(
-            fontSize: 12,
-            fontFamily: 'monospace',
+          userFriendlyMsg,
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
             color: kTextDark,
           ),
         ),
@@ -1065,13 +1085,79 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
     return widgets;
   }
 
+  /// Convert technical trace messages to simple, user-friendly language
+  String _simplifyTraceMessage(String msg, String phase) {
+    // Remove technical prefixes and timestamp noise
+    msg = msg.replaceAll(RegExp(r'^Attempt \d+:'), '').trim();
+    msg = msg.replaceAll(RegExp(r'InputSourceType\.TEXT.*'), '').trim();
+    msg = msg.replaceAll(RegExp(r'Processing.*signal'), '').trim();
+    msg = msg.replaceAll(RegExp(r'\[.*?\]'), '').trim();
+    
+    // User-friendly mappings
+    if (phase.contains('DETECTION')) {
+      if (msg.toLowerCase().contains('analyzing')) return '🔍 Analyzing your report...';
+      if (msg.toLowerCase().contains('verified')) return '✅ Report verified as legitimate';
+      if (msg.toLowerCase().contains('fire')) return '🔥 Fire detected | Priority: CRITICAL';
+      if (msg.toLowerCase().contains('flood')) return '🌊 Flooding detected | Priority: CRITICAL';
+      if (msg.toLowerCase().contains('accident')) return '🚗 Accident detected | Priority: HIGH';
+      if (msg.toLowerCase().contains('priority')) return '⚠️ Assigning priority level...';
+      return '🔍 Analyzing incident type...';
+    }
+    
+    if (phase.contains('ANALYSIS')) {
+      if (msg.toLowerCase().contains('impact')) return '📊 Calculating affected area and population...';
+      if (msg.toLowerCase().contains('severity')) return '📈 Assessing incident severity...';
+      if (msg.toLowerCase().contains('resource')) return '🚑 Finding nearby help (hospitals, rescue teams)...';
+      if (msg.toLowerCase().contains('eta')) return '⏱️ Computing arrival times for help...';
+      return '📊 Understanding the situation...';
+    }
+    
+    if (phase.contains('PLANNING')) {
+      if (msg.toLowerCase().contains('rag') || msg.toLowerCase().contains('protocol')) {
+        return '📋 Checking emergency protocols from database...';
+      }
+      if (msg.toLowerCase().contains('resource')) {
+        return '📦 Planning resource deployment...';
+      }
+      if (msg.toLowerCase().contains('dispatch')) {
+        return '🎯 Creating response plan...';
+      }
+      return '📋 Planning the best response...';
+    }
+    
+    if (phase.contains('EXECUTION')) {
+      if (msg.toLowerCase().contains('alert') || msg.toLowerCase().contains('notify')) {
+        return '📢 Sending alerts to users...';
+      }
+      if (msg.toLowerCase().contains('dispatch')) {
+        return '🚑 Dispatching resources...';
+      }
+      if (msg.toLowerCase().contains('tool') || msg.toLowerCase().contains('executing')) {
+        return '⚡ Executing response actions...';
+      }
+      if (msg.toLowerCase().contains('database')) {
+        return '💾 Saving incident to database...';
+      }
+      return '⚡ Executing response plan...';
+    }
+    
+    // If no pattern matches, show generic message based on content length
+    if (msg.isEmpty) return '⏳ Processing...';
+    
+    // Return first 60 chars if message is still too technical
+    if (msg.length > 60) {
+      return '⏳ ${msg.substring(0, 60)}...';
+    }
+    return '⏳ $msg';
+  }
+
   Color _phaseColor(String phase) {
     switch (phase) {
       case 'DETECTION': return Colors.blue.shade400;
-      case 'ANALYSIS': return Colors.purple.shade400;
+      case 'ANALYSIS': return Colors.orange.shade400;  // Changed from purple for clarity
       case 'PLANNING': return Colors.teal.shade400;
-      case 'EXECUTION': return kPrimaryTeal;
-      case 'PIPELINE_COMPLETE': return Colors.green;
+      case 'EXECUTION': return Colors.green.shade400;  // Changed for success indication
+      case 'PIPELINE_COMPLETE': return Colors.green.shade600;
       case 'FALLBACK': return kEmergencyRed;
       default: return Colors.grey.shade400;
     }
@@ -1163,10 +1249,10 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
     }
 
     final List<Map<String, dynamic>> agents = [
-      {"id": "DETECTION", "name": "Detection", "icon": Icons.radar},
-      {"id": "ANALYSIS", "name": "Analysis", "icon": Icons.analytics_outlined},
-      {"id": "PLANNING", "name": "Planning", "icon": Icons.tips_and_updates},
-      {"id": "EXECUTION", "name": "Execution", "icon": Icons.bolt},
+      {"id": "DETECTION", "name": "🔍 Identify", "icon": Icons.radar},
+      {"id": "ANALYSIS", "name": "📊 Assess", "icon": Icons.analytics_outlined},
+      {"id": "PLANNING", "name": "📋 Plan", "icon": Icons.tips_and_updates},
+      {"id": "EXECUTION", "name": "✅ Dispatch", "icon": Icons.bolt},
     ];
 
     return Card(
@@ -1181,7 +1267,7 @@ class _IncidentTrackerScreenState extends State<IncidentTrackerScreen>
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  "Multi-Agent AI Pipeline",
+                  "🤖 AI Response System",
                   style: GoogleFonts.nunito(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,

@@ -15,6 +15,7 @@ class LocalLlmService {
 
   static const String modelFileName = 'qwen2.5-0.5b-instruct-q4_k_m.gguf';
   static const String modelDownloadUrl = 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf';
+  static const int _minimumModelBytes = 50 * 1024 * 1024;
 
   LlamaParent? _llamaParent;
   bool _isInitializing = false;
@@ -25,12 +26,24 @@ class LocalLlmService {
   /// Check if the model has already been downloaded onto device memory
   Future<bool> isModelDownloaded() async {
     final file = await _getModelFile();
-    return await file.exists();
+    if (!await file.exists()) return false;
+
+    final size = await file.length();
+    return size >= _minimumModelBytes;
   }
 
   Future<File> _getModelFile() async {
     final directory = await getApplicationSupportDirectory();
     return File('${directory.path}/$modelFileName');
+  }
+
+  Future<void> _deleteModelFile() async {
+    final file = await _getModelFile();
+    if (await file.exists()) {
+      try {
+        await file.delete();
+      } catch (_) {}
+    }
   }
 
   /// Downloads the 350MB Qwen GGUF model file chunk-by-chunk and streams progress (0.0 to 1.0)
@@ -46,27 +59,36 @@ class LocalLlmService {
       final request = http.Request('GET', Uri.parse(modelDownloadUrl));
       final response = await client.send(request);
 
+      if (response.statusCode != 200) {
+        throw Exception('Download failed with status: ${response.statusCode}');
+      }
+
       final totalBytes = response.contentLength ?? 360000000;
       int downloadedBytes = 0;
 
       await file.parent.create(recursive: true);
+      await _deleteModelFile();
       final IOSink sink = file.openWrite();
 
-      await for (var chunk in response.stream) {
-        sink.add(chunk);
-        downloadedBytes += chunk.length;
-        double progress = downloadedBytes / totalBytes;
-        if (progress > 1.0) progress = 1.0;
-        yield progress;
+      try {
+        await for (var chunk in response.stream) {
+          sink.add(chunk);
+          downloadedBytes += chunk.length;
+          double progress = downloadedBytes / totalBytes;
+          if (progress > 1.0) progress = 1.0;
+          yield progress;
+        }
+        await sink.flush();
+      } finally {
+        await sink.close();
       }
-      await sink.flush();
-      await sink.close();
+
+      if (downloadedBytes < totalBytes || downloadedBytes < _minimumModelBytes) {
+        await _deleteModelFile();
+        throw Exception('Downloaded file is incomplete.');
+      }
     } catch (e) {
-      if (await file.exists()) {
-        try {
-          await file.delete();
-        } catch (_) {}
-      }
+      await _deleteModelFile();
       rethrow;
     } finally {
       client.close();
@@ -85,6 +107,12 @@ class LocalLlmService {
         throw Exception("Model file not found. Download it first.");
       }
 
+      final size = await file.length();
+      if (size < _minimumModelBytes) {
+        await _deleteModelFile();
+        throw Exception("Stored model file is incomplete. Please download it again.");
+      }
+
       debugPrint("[LocalLlm] Initializing Llama Engine isolate with path: ${file.path}");
       
       final loadCommand = LlamaLoad(
@@ -99,6 +127,7 @@ class LocalLlmService {
       _isInitialized = true;
       debugPrint("[LocalLlm] Llama Engine successfully initialized!");
     } catch (e) {
+      await _deleteModelFile();
       debugPrint("[LocalLlm] Failed to initialize local Llama: $e");
       _isInitialized = false;
       rethrow;
@@ -162,10 +191,15 @@ class LocalLlmService {
     if (_isInitialized) {
       try {
         final buffer = StringBuffer();
-        await for (final token in getOfflineResponseStream(query)) {
+        await for (final token in getOfflineResponseStream(query)
+            .timeout(const Duration(seconds: 8))) {
           buffer.write(token);
         }
-        return buffer.toString();
+
+        final response = buffer.toString().trim();
+        if (response.isNotEmpty) {
+          return response;
+        }
       } catch (e) {
         debugPrint("[LocalLlm] Fallback to regex due to inference error: $e");
       }
@@ -512,8 +546,9 @@ class LocalLlmService {
   }
 
   bool _matches(String text, List<String> keywords) {
+    final normalizedText = text.toLowerCase();
     for (var keyword in keywords) {
-      if (text.contains(keyword)) {
+      if (normalizedText.contains(keyword.toLowerCase())) {
         return true;
       }
     }

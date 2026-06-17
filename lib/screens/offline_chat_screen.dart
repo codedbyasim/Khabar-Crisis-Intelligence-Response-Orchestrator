@@ -163,48 +163,7 @@ class _OfflineChatScreenState extends State<OfflineChatScreen> {
     _messageController.clear();
     _scrollToBottom();
 
-    if (_isModelReady) {
-      // Stream tokens dynamically from local LLM
-      setState(() {
-        _isTyping = false; // Hide "thinking" spinner, stream directly into text card
-        _messages.add(OfflineChatMessage(
-          text: "",
-          isUser: false,
-          timestamp: DateTime.now(),
-        ));
-      });
-
-      String accumulatedResponse = "";
-      LocalLlmService().getOfflineResponseStream(text).listen(
-        (token) {
-          accumulatedResponse += token;
-          if (mounted) {
-            setState(() {
-              _messages[_messages.length - 1] = OfflineChatMessage(
-                text: accumulatedResponse,
-                isUser: false,
-                timestamp: DateTime.now(),
-              );
-            });
-            _scrollToBottom();
-          }
-        },
-        onError: (error) {
-          if (mounted) {
-            setState(() {
-              _messages[_messages.length - 1] = OfflineChatMessage(
-                text: "Local AI Error: Failed to generate response ($error).",
-                isUser: false,
-                timestamp: DateTime.now(),
-              );
-            });
-            _scrollToBottom();
-          }
-        },
-        cancelOnError: true,
-      );
-    } else {
-      // Rule-based fallback (regex matching)
+    try {
       final response = await LocalLlmService().getOfflineResponse(
         text,
         _selectedLang,
@@ -216,6 +175,18 @@ class _OfflineChatScreenState extends State<OfflineChatScreen> {
           _isTyping = false;
           _messages.add(OfflineChatMessage(
             text: response,
+            isUser: false,
+            timestamp: DateTime.now(),
+          ));
+        });
+        _scrollToBottom();
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _isTyping = false;
+          _messages.add(OfflineChatMessage(
+            text: "Local AI Error: Failed to generate response ($error).",
             isUser: false,
             timestamp: DateTime.now(),
           ));

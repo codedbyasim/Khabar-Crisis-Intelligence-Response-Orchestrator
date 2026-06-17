@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:khabar/screens/text_signal_screen.dart';
 import 'package:khabar/screens/photo_verification_screen.dart';
-import 'package:khabar/screens/voice_report_screen.dart';
 import 'package:khabar/theme/app_colors.dart';
 
 class QuickReportBottomSheet extends StatelessWidget {
@@ -70,8 +69,6 @@ class QuickReportBottomSheet extends StatelessWidget {
                         );
                       },
                     ),
-                    const SizedBox(height: 12),
-                    _buildVoiceReportCard(context),
                   ],
                 ),
               ),
@@ -128,80 +125,6 @@ class QuickReportBottomSheet extends StatelessWidget {
                   Text(
                     subtitle,
                     style: const TextStyle(fontSize: 14, color: kTextLight),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right, color: Colors.grey),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildVoiceReportCard(BuildContext context) {
-    return InkWell(
-      onTap: () {
-        Navigator.pop(context);
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const VoiceReportScreen()),
-        );
-      },
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: kBackgroundLight,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Colors.grey.shade200),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange.withValues(alpha: 0.1),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.mic, color: Colors.orange, size: 28),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Voice Report',
-                    style: GoogleFonts.nunito(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: kTextDark,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    'وائس رپورٹ',
-                    style: const TextStyle(fontSize: 14, color: kTextLight),
-                  ),
-                  const SizedBox(height: 6),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      'Multi-dialect: Urdu, Punjabi, English',
-                      style: GoogleFonts.nunito(
-                        fontSize: 10,
-                        color: Colors.orange.shade800,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
                   ),
                 ],
               ),

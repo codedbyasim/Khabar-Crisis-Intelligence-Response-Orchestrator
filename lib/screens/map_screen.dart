@@ -897,7 +897,7 @@ class _MapScreenState extends State<MapScreen> {
                   polylines: _createPolylines(),
                   myLocationEnabled: true,
                   myLocationButtonEnabled: true,
-                  zoomControlsEnabled: false,
+                  zoomControlsEnabled: true,
                 );
               } else {
                 return OfflineVectorMap(

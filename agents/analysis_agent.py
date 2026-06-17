@@ -81,6 +81,7 @@ RULES:
 - Always consider weather and traffic multipliers. High traffic + heavy rain drastically increases Response Difficulty and Impact Score.
 - Urdu summaries must be written in standard, professional Urdu script.
 - All reasoning must be highly context-aware based on the user's explicit payload data.
+- STRICT SYSTEM ACTION RULE: The summaries must strictly describe only the current situation, damage, risks, and hazard levels. Do NOT mention or claim that emergency teams, WASA, Rescue 1122, or other resources have already been dispatched, deployed, or arrived, nor state that any actions have been executed, as the system has not yet dispatched them.
 """
 
 # ==========================================

@@ -37,10 +37,10 @@ class LocationHelper {
     return lat >= minLat && lat <= maxLat && lng >= minLng && lng <= maxLng;
   }
 
-  /// Attempts to fetch location in Pakistan.
-  /// 1. Tries GPS
-  /// 2. If GPS fails, is outside Pakistan (e.g. Emulator Google HQ), or times out, tries IP-based Geolocation.
-  /// 3. Falls back to getDefaultLocation() if both fail or are outside Pakistan.
+  /// Attempts to fetch location.
+  /// 1. Tries GPS (last known then current)
+  /// 2. If GPS fails or times out, tries IP-based Geolocation.
+  /// 3. Falls back to getDefaultLocation().
   static Future<LocationResult> fetchLocation() async {
     // 1. Try GPS location (skip auto-fetch on Web as browser GPS might be wrong or blocked by CORS)
     if (!kIsWeb) {
@@ -53,20 +53,27 @@ class LocationHelper {
           }
           if (permission == LocationPermission.whileInUse ||
               permission == LocationPermission.always) {
+            // Try last known position first for instant lock
+            final lastPosition = await Geolocator.getLastKnownPosition();
+            if (lastPosition != null) {
+              debugPrint('[LocationHelper] GPS last known position succeeded: (${lastPosition.latitude}, ${lastPosition.longitude})');
+              return LocationResult(
+                position: LatLng(lastPosition.latitude, lastPosition.longitude),
+                isMockedOrOutside: !isInPakistan(lastPosition.latitude, lastPosition.longitude),
+                source: 'gps',
+              );
+            }
+
             final position = await Geolocator.getCurrentPosition(
               locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
             ).timeout(const Duration(seconds: 8));
 
-            if (isInPakistan(position.latitude, position.longitude)) {
-              debugPrint('[LocationHelper] GPS location succeeded: (${position.latitude}, ${position.longitude})');
-              return LocationResult(
-                position: LatLng(position.latitude, position.longitude),
-                isMockedOrOutside: false,
-                source: 'gps',
-              );
-            } else {
-              debugPrint('[LocationHelper] GPS coords (${position.latitude}, ${position.longitude}) are outside Pakistan (Emulator/Mock?).');
-            }
+            debugPrint('[LocationHelper] GPS location succeeded: (${position.latitude}, ${position.longitude})');
+            return LocationResult(
+              position: LatLng(position.latitude, position.longitude),
+              isMockedOrOutside: !isInPakistan(position.latitude, position.longitude),
+              source: 'gps',
+            );
           }
         }
       } catch (e) {
@@ -74,12 +81,12 @@ class LocationHelper {
       }
     }
 
-    // 2. If GPS failed or was outside Pakistan, try IP-based location fallback
+    // 2. If GPS failed, try IP-based location fallback
     final ipLoc = await fetchIPLocation();
     if (ipLoc != null) {
       return LocationResult(
         position: ipLoc,
-        isMockedOrOutside: false,
+        isMockedOrOutside: !isInPakistan(ipLoc.latitude, ipLoc.longitude),
         source: 'ip',
       );
     }
@@ -121,12 +128,8 @@ class LocationHelper {
           }
 
           if (lat != null && lng != null) {
-            if (isInPakistan(lat, lng)) {
-              debugPrint('[LocationHelper] IP Geolocation ($url) succeeded: ($lat, $lng)');
-              return LatLng(lat, lng);
-            } else {
-              debugPrint('[LocationHelper] IP Geolocation ($url) returned coords outside Pakistan: ($lat, $lng)');
-            }
+            debugPrint('[LocationHelper] IP Geolocation ($url) succeeded: ($lat, $lng)');
+            return LatLng(lat, lng);
           }
         }
       } catch (e) {
