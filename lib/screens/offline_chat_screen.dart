@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:khabar/utils/local_llm_service.dart';
@@ -28,10 +29,93 @@ class _OfflineChatScreenState extends State<OfflineChatScreen> {
   bool _isTyping = false;
   String _selectedLang = 'English'; // Toggle between 'English', 'اردو', 'Roman Urdu'
 
+  // Model download & initialization states
+  bool _isDownloading = false;
+  double _downloadProgress = 0.0;
+  bool _isInitializingModel = false;
+  bool _isModelReady = false;
+  String _downloadError = '';
+
   @override
   void initState() {
     super.initState();
+    _checkModelStatus();
     _loadWelcomeMessage();
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    _scrollController.dispose();
+    LocalLlmService().dispose();
+    super.dispose();
+  }
+
+  Future<void> _checkModelStatus() async {
+    final downloaded = await LocalLlmService().isModelDownloaded();
+    if (downloaded) {
+      _initializeModel();
+    }
+  }
+
+  Future<void> _initializeModel() async {
+    if (mounted) {
+      setState(() {
+        _isInitializingModel = true;
+        _downloadError = '';
+      });
+    }
+    try {
+      await LocalLlmService().initModel();
+      if (mounted) {
+        setState(() {
+          _isModelReady = true;
+          _isInitializingModel = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _downloadError = 'Failed to load AI engine: $e';
+          _isInitializingModel = false;
+        });
+      }
+    }
+  }
+
+  void _startDownload() {
+    if (mounted) {
+      setState(() {
+        _isDownloading = true;
+        _downloadProgress = 0.0;
+        _downloadError = '';
+      });
+    }
+
+    LocalLlmService().downloadModel().listen(
+      (progress) {
+        if (mounted) {
+          setState(() {
+            _downloadProgress = progress;
+          });
+        }
+      },
+      onError: (error) {
+        if (mounted) {
+          setState(() {
+            _isDownloading = false;
+            _downloadError = 'Download failed: $error';
+          });
+        }
+      },
+      onDone: () {
+        if (mounted) {
+            _isDownloading = false;
+        }
+        _initializeModel();
+      },
+      cancelOnError: true,
+    );
   }
 
   void _loadWelcomeMessage() {
@@ -79,23 +163,65 @@ class _OfflineChatScreenState extends State<OfflineChatScreen> {
     _messageController.clear();
     _scrollToBottom();
 
-    // Fetch response from local simulation
-    final response = await LocalLlmService().getOfflineResponse(
-      text,
-      _selectedLang,
-      "Islamabad",
-    );
-
-    if (mounted) {
+    if (_isModelReady) {
+      // Stream tokens dynamically from local LLM
       setState(() {
-        _isTyping = false;
+        _isTyping = false; // Hide "thinking" spinner, stream directly into text card
         _messages.add(OfflineChatMessage(
-          text: response,
+          text: "",
           isUser: false,
           timestamp: DateTime.now(),
         ));
       });
-      _scrollToBottom();
+
+      String accumulatedResponse = "";
+      LocalLlmService().getOfflineResponseStream(text).listen(
+        (token) {
+          accumulatedResponse += token;
+          if (mounted) {
+            setState(() {
+              _messages[_messages.length - 1] = OfflineChatMessage(
+                text: accumulatedResponse,
+                isUser: false,
+                timestamp: DateTime.now(),
+              );
+            });
+            _scrollToBottom();
+          }
+        },
+        onError: (error) {
+          if (mounted) {
+            setState(() {
+              _messages[_messages.length - 1] = OfflineChatMessage(
+                text: "Local AI Error: Failed to generate response ($error).",
+                isUser: false,
+                timestamp: DateTime.now(),
+              );
+            });
+            _scrollToBottom();
+          }
+        },
+        cancelOnError: true,
+      );
+    } else {
+      // Rule-based fallback (regex matching)
+      final response = await LocalLlmService().getOfflineResponse(
+        text,
+        _selectedLang,
+        "Islamabad",
+      );
+
+      if (mounted) {
+        setState(() {
+          _isTyping = false;
+          _messages.add(OfflineChatMessage(
+            text: response,
+            isUser: false,
+            timestamp: DateTime.now(),
+          ));
+        });
+        _scrollToBottom();
+      }
     }
   }
 
@@ -224,6 +350,151 @@ class _OfflineChatScreenState extends State<OfflineChatScreen> {
     return spans;
   }
 
+  Widget _buildDownloadSection(bool isUrdu) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFF091E1D).withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFF14C3B4).withValues(alpha: 0.2),
+          width: 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF14C3B4).withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.bolt_rounded,
+                color: Color(0xFF14C3B4),
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                isUrdu ? "ایڈوانسڈ آف لائن اے آئی اپ گریڈ" : "Advanced Offline AI Upgrade",
+                style: GoogleFonts.nunito(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            isUrdu
+                ? "کیا آپ 350MB کا ایڈوانسڈ آف لائن Qwen-2.5 ماڈل ڈاؤن لوڈ کرنا چاہتے ہیں؟ یہ آپ کے 4GB RAM فون پر بغیر انٹرنیٹ مکمل ہنگامی معلومات فراہم کرے گا۔"
+                : "Download the 350MB advanced Qwen-2.5 local model to enable rich on-device emergency reasoning without internet.",
+            style: GoogleFonts.nunito(
+              color: Colors.white70,
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
+          if (_downloadError.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              _downloadError,
+              style: const TextStyle(color: Color(0xFFFF5252), fontSize: 11),
+            ),
+          ],
+          const SizedBox(height: 12),
+          if (_isDownloading) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: _downloadProgress,
+                      backgroundColor: Colors.white10,
+                      valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF14C3B4)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  "${(_downloadProgress * 100).toStringAsFixed(0)}%",
+                  style: GoogleFonts.nunito(
+                    color: const Color(0xFF14C3B4),
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              isUrdu ? "ڈاؤن لوڈ ہو رہا ہے، براہِ کرم انتظار کریں..." : "Downloading model file, please wait...",
+              style: GoogleFonts.nunito(
+                color: Colors.white38,
+                fontSize: 10,
+              ),
+            ),
+          ] else if (_isInitializingModel) ...[
+            Row(
+              children: [
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.5,
+                    color: Color(0xFF14C3B4),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(
+                  isUrdu ? "آف لائن اے آئی ماڈل شروع ہو رہا ہے..." : "Initializing offline AI model...",
+                  style: GoogleFonts.nunito(color: Colors.white70, fontSize: 12),
+                ),
+              ],
+            ),
+          ] else ...[
+            GestureDetector(
+              onTap: _startDownload,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF2EA39B), Color(0xFF165E59)],
+                  ),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF14C3B4).withValues(alpha: 0.2),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Text(
+                    isUrdu ? "آف لائن ماڈل ڈاؤن لوڈ کریں (350MB)" : "Download Offline Model (350MB)",
+                    style: GoogleFonts.nunito(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isUrdu = _selectedLang == 'اردو';
@@ -262,17 +533,19 @@ class _OfflineChatScreenState extends State<OfflineChatScreen> {
                       Container(
                         width: 7,
                         height: 7,
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           shape: BoxShape.circle,
-                          color: Color(0xFF14C3B4),
+                          color: _isModelReady ? const Color(0xFF14C3B4) : Colors.amber,
                         ),
                       ),
                       const SizedBox(width: 5),
                       Text(
-                        isUrdu ? "لوکل ماڈل: فعال" : "On-Device Core: ACTIVE",
+                        _isModelReady 
+                            ? (isUrdu ? "لوکل Qwen AI: فعال" : "On-Device Qwen AI: ACTIVE")
+                            : (isUrdu ? "لوکل میچر: فعال" : "On-Device Matcher: ACTIVE"),
                         style: GoogleFonts.nunito(
                           fontSize: 10,
-                          color: const Color(0xFF14C3B4),
+                          color: _isModelReady ? const Color(0xFF14C3B4) : Colors.amber,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -368,6 +641,10 @@ class _OfflineChatScreenState extends State<OfflineChatScreen> {
                   ],
                 ),
               ),
+
+              // Glassmorphic Download Section
+              if (!_isModelReady)
+                _buildDownloadSection(isUrdu),
 
               // Chat Messages Area
               Expanded(

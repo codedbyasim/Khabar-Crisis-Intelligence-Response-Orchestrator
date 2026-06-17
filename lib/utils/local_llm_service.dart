@@ -1,22 +1,213 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
+import 'package:llama_cpp_dart/llama_cpp_dart.dart';
 
 /// LocalLlmService — 100% On-device client-side Emergency Assistant.
-/// Does not require any network or backend connection.
+/// Orchestrates dynamic Qwen2.5-0.5B-Instruct local GGUF execution via llama_cpp_dart.
+/// Falls back gracefully to rule-based keyword matchers if model is not yet downloaded.
 class LocalLlmService {
   static final LocalLlmService _instance = LocalLlmService._internal();
   factory LocalLlmService() => _instance;
   LocalLlmService._internal();
 
+  static const String modelFileName = 'qwen2.5-0.5b-instruct-q4_k_m.gguf';
+  static const String modelDownloadUrl = 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf';
+
+  LlamaParent? _llamaParent;
+  bool _isInitializing = false;
+  bool _isInitialized = false;
+
+  bool get isInitialized => _isInitialized;
+
+  /// Check if the model has already been downloaded onto device memory
+  Future<bool> isModelDownloaded() async {
+    final file = await _getModelFile();
+    return await file.exists();
+  }
+
+  Future<File> _getModelFile() async {
+    final directory = await getApplicationSupportDirectory();
+    return File('${directory.path}/$modelFileName');
+  }
+
+  /// Downloads the 350MB Qwen GGUF model file chunk-by-chunk and streams progress (0.0 to 1.0)
+  Stream<double> downloadModel() async* {
+    final file = await _getModelFile();
+    if (await file.exists()) {
+      yield 1.0;
+      return;
+    }
+
+    final client = http.Client();
+    try {
+      final request = http.Request('GET', Uri.parse(modelDownloadUrl));
+      final response = await client.send(request);
+
+      final totalBytes = response.contentLength ?? 360000000;
+      int downloadedBytes = 0;
+
+      await file.parent.create(recursive: true);
+      final IOSink sink = file.openWrite();
+
+      await for (var chunk in response.stream) {
+        sink.add(chunk);
+        downloadedBytes += chunk.length;
+        double progress = downloadedBytes / totalBytes;
+        if (progress > 1.0) progress = 1.0;
+        yield progress;
+      }
+      await sink.flush();
+      await sink.close();
+    } catch (e) {
+      if (await file.exists()) {
+        try {
+          await file.delete();
+        } catch (_) {}
+      }
+      rethrow;
+    } finally {
+      client.close();
+    }
+  }
+
+  /// Initializes the Llama engine with model offloaded to a background isolate thread
+  Future<void> initModel() async {
+    if (_isInitialized) return;
+    if (_isInitializing) return;
+    _isInitializing = true;
+
+    try {
+      final file = await _getModelFile();
+      if (!await file.exists()) {
+        throw Exception("Model file not found. Download it first.");
+      }
+
+      debugPrint("[LocalLlm] Initializing Llama Engine isolate with path: ${file.path}");
+      
+      final loadCommand = LlamaLoad(
+        path: file.path,
+        modelParams: ModelParams(),
+        contextParams: ContextParams(),
+        samplingParams: SamplerParams(),
+      );
+
+      _llamaParent = LlamaParent(loadCommand);
+      await _llamaParent!.init();
+      _isInitialized = true;
+      debugPrint("[LocalLlm] Llama Engine successfully initialized!");
+    } catch (e) {
+      debugPrint("[LocalLlm] Failed to initialize local Llama: $e");
+      _isInitialized = false;
+      rethrow;
+    } finally {
+      _isInitializing = false;
+    }
+  }
+
+  /// Streams generated response tokens from the on-device model isolate
+  Stream<String> getOfflineResponseStream(String query) {
+    if (!_isInitialized || _llamaParent == null) {
+      return Stream.value("Error: Local AI engine is not initialized.");
+    }
+
+    final controller = StreamController<String>();
+    
+    // ChatML prompt structure for Qwen2.5-Instruct
+    final prompt = "<|im_start|>system\n"
+        "You are Khabar Offline AI, a helpful emergency response assistant for Islamabad and Rawalpindi. "
+        "Keep responses extremely concise (2-3 sentences max), comforting, reassuring, and actionable. "
+        "Provide specific safety tips, emergency helplines, or instructions in the user's language.\n"
+        "<|im_end|>\n"
+        "<|im_start|>user\n"
+        "$query\n"
+        "<|im_end|>\n"
+        "<|im_start|>assistant\n";
+
+    StreamSubscription<String>? subscription;
+
+    subscription = _llamaParent!.stream.listen(
+      (token) {
+        if (!controller.isClosed) {
+          if (token.contains("<|im_end|>") || token.contains("<|im_start|>")) {
+            controller.close();
+            subscription?.cancel();
+          } else {
+            controller.add(token);
+          }
+        }
+      },
+      onError: (err) {
+        if (!controller.isClosed) controller.addError(err);
+      },
+      onDone: () {
+        if (!controller.isClosed) controller.close();
+      },
+      cancelOnError: true,
+    );
+
+    _llamaParent!.sendPrompt(prompt);
+    return controller.stream;
+  }
+
+  /// Synchronous fallback helper for backward compatibility and regex rule matchers
+  Future<String> getOfflineResponse(
+    String query,
+    String selectedLanguage,
+    String sector,
+  ) async {
+    // If the local GGUF model is downloaded and initialized, use it
+    if (_isInitialized) {
+      try {
+        final buffer = StringBuffer();
+        await for (final token in getOfflineResponseStream(query)) {
+          buffer.write(token);
+        }
+        return buffer.toString();
+      } catch (e) {
+        debugPrint("[LocalLlm] Fallback to regex due to inference error: $e");
+      }
+    }
+
+    // Default simulation/regex logic if model is not loaded
+    await Future.delayed(const Duration(milliseconds: 500));
+    final String cleanQuery = query.toLowerCase().trim();
+    String lang = detectLanguage(query);
+    
+    if (selectedLanguage == 'اردو' || selectedLanguage == 'Urdu') {
+      final RegExp urduRegExp = RegExp(r'[\u0600-\u06FF]');
+      if (!urduRegExp.hasMatch(query) && cleanQuery.length > 2) {
+        lang = 'Roman Urdu';
+      } else {
+        lang = 'Urdu';
+      }
+    } else if (selectedLanguage == 'Roman Urdu') {
+      lang = 'Roman Urdu';
+    } else {
+      final RegExp urduRegExp = RegExp(r'[\u0600-\u06FF]');
+      if (urduRegExp.hasMatch(query)) {
+        lang = 'Urdu';
+      }
+    }
+
+    if (lang == 'Urdu') {
+      return _getUrduResponse(cleanQuery, sector);
+    } else if (lang == 'Roman Urdu') {
+      return _getRomanUrduResponse(cleanQuery, sector);
+    } else {
+      return _getEnglishResponse(cleanQuery, sector);
+    }
+  }
+
   /// Auto-detects whether the query is written in Urdu, Roman Urdu, or English.
   String detectLanguage(String query) {
-    // Check if contains Urdu characters (Arabic script block)
     final RegExp urduRegExp = RegExp(r'[\u0600-\u06FF]');
     if (urduRegExp.hasMatch(query)) {
       return 'Urdu';
     }
 
-    // Check for common Roman Urdu words
     final List<String> romanUrduKeywords = [
       'kya', 'hai', 'hain', 'mein', 'batao', 'karo', 'se', 'ki', 'ko', 'pay', 'pe', 'bachein', 
       'shuru', 'miley', 'ke', 'aur', 'ka', 'he', 'ye', 'yeh', 'kar', 'karen', 'karein', 'toh',
@@ -39,55 +230,8 @@ class LocalLlmService {
     return 'English';
   }
 
-  Future<String> getOfflineResponse(
-    String query,
-    String selectedLanguage,
-    String sector,
-  ) async {
-    // Simulate a brief local LLM processing delay (500ms) for high-fidelity feel
-    await Future.delayed(const Duration(milliseconds: 500));
-
-    final String cleanQuery = query.toLowerCase().trim();
-    
-    // Auto-detect language based on the actual input to be smart,
-    // fallback to selectedLanguage if unsure.
-    String lang = detectLanguage(query);
-    if (lang == 'English' && (selectedLanguage == 'اردو' || selectedLanguage == 'Urdu')) {
-      // If the user set language to Urdu but typed in English/Roman, honor auto-detect.
-      // Otherwise, default to user selection if it matches.
-    }
-    
-    // If selectedLanguage is explicitly passed, let's respect it unless input characters strictly suggest Urdu
-    if (selectedLanguage == 'اردو' || selectedLanguage == 'Urdu') {
-      final RegExp urduRegExp = RegExp(r'[\u0600-\u06FF]');
-      if (!urduRegExp.hasMatch(query) && cleanQuery.length > 2) {
-        lang = 'Roman Urdu'; // They selected Urdu but typed in English/Latin script
-      } else {
-        lang = 'Urdu';
-      }
-    } else if (selectedLanguage == 'Roman Urdu') {
-      lang = 'Roman Urdu';
-    } else {
-      // English selected, check if they typed in Urdu script anyway
-      final RegExp urduRegExp = RegExp(r'[\u0600-\u06FF]');
-      if (urduRegExp.hasMatch(query)) {
-        lang = 'Urdu';
-      }
-    }
-
-    debugPrint('[LocalLlm] On-Device inference language: $lang for query: "$query"');
-
-    if (lang == 'Urdu') {
-      return _getUrduResponse(cleanQuery, sector);
-    } else if (lang == 'Roman Urdu') {
-      return _getRomanUrduResponse(cleanQuery, sector);
-    } else {
-      return _getEnglishResponse(cleanQuery, sector);
-    }
-  }
-
   // ════════════════════════════════════════════
-  // ENGLISH OFF-LINE RESPONSES
+  // ENGLISH OFF-LINE ADVISORIES
   // ════════════════════════════════════════════
   String _getEnglishResponse(String query, String sector) {
     if (_matches(query, ['hello', 'hi', 'salam', 'khabar', 'who are you', 'status', 'start'])) {
@@ -168,7 +312,6 @@ class LocalLlmService {
           '  * **Benazir Bhutto Hospital**: Murree Road, Rawalpindi (📞 `051-9290301`)';
     }
 
-    // Default Fallback
     return 'ℹ️ **KHABAR Offline Intelligence Core (No Match):**\n\n'
         'I am running offline without server connection. I detected your query, but do not have an exact matching response in my local database.\n\n'
         '🚨 **Quick Help Contact Numbers:**\n'
@@ -179,13 +322,13 @@ class LocalLlmService {
   }
 
   // ════════════════════════════════════════════
-  // URDU OFF-LINE RESPONSES
+  // URDU OFF-LINE ADVISORIES
   // ════════════════════════════════════════════
   String _getUrduResponse(String query, String sector) {
     if (_matches(query, ['ہیلو', 'سلام', 'اسلام', 'کون', 'خبر', 'سٹارٹ', 'شروع'])) {
       return '👋 **السلام علیکم! میں خبر آف لائن اے آئی اسسٹنٹ ہوں۔**\n\n'
           'میں آپ کے فون پر بغیر انٹرنیٹ اور بغیر بیک اینڈ سرور کے 100% مقامی طور پر کام کر رہا ہوں۔\n\n'
-          'میں آپ کو اسلام آباد اور راولپنڈی کے ہنگامی نمبرز، سیلاب سے بچاؤ، بارش کی حفاظتی تدابیر، بجلی کی حفاظت، فرسٹ ایڈ اور گیس لیکج کے بارے میں معلومات فراہم کر سکتا ہوں۔\n\n'
+          'میں آپ کو ہنگامی نمبرز، سیلاب سے بچاؤ، بارش کی حفاظتی تدابیر، بجلی کی حفاظت، فرسٹ ایڈ اور گیس لیکج کے بارے میں معلومات فراہم کر سکتا ہوں۔\n\n'
           '*اس ہنگامی صورتحال میں، میں آپ کی کیا مدد کر سکتا ہوں؟*';
     }
 
@@ -228,7 +371,7 @@ class LocalLlmService {
 
     if (_matches(query, ['بجلی', 'کرنٹ', 'جھٹکا', 'تار', 'کھمبا', 'ٹرانسفارمر', 'واپڈا', 'آئیسکو'])) {
       return '⚡ **بجلی کے خطرات اور حادثات سے بچاؤ:**\n\n'
-          '* **ٹوٹے ہوئے تار**: سڑک پر گرے ہوئے تاروں کو چالو سمجھیں اور ان سے کم از کم 30 فٹ کا فاصلہ رکھیں۔\n'
+          '* **ٹوٹے ہوئے تار**: سڑک پر گرے ہوئے تاروں کو چالو سمجھیں اور ان سے کم از کم 30 فٹ کا فاعدہ رکھیں۔\n'
           '* **گیلے ہاتھ**: گیلے ہاتھوں سے بجلی کے بورڈ، سوئچ یا آلات کو ہاتھ نہ لگائیں اور نہ ہی پانی میں کھڑے ہو کر ایسا کریں۔\n'
           '* **کرنٹ لگنے کی صورت میں فرسٹ ایڈ**:\n'
           '  1. **متاثرہ شخص کو براہ راست نہ چھوئیں۔**\n'
@@ -248,7 +391,7 @@ class LocalLlmService {
           '* **آگ لگنے پر**: عمارت سے فوراً باہر نکلیں۔ لفٹ کا استعمال نہ کریں۔ اسلام آباد فائر بریگیڈ 📞 `16` یا ریسکیو 📞 `1122` پر کال کریں۔';
     }
 
-    if (_matches(query, ['زخمی', 'فرسٹ ایڈ', 'طبی', 'ہسپتال', 'چوٹ', 'پمز', 'شفا', 'ڈاکٹر'])) {
+    if (_matches(query, ['زخمی', 'فرسٹ ایڈ', 'طبی', 'ہسبتال', 'چوٹ', 'پمز', 'شفا', 'ڈاکٹر'])) {
       return '🚑 **فرسٹ ایڈ اور ہنگامی طبی معلومات:**\n\n'
           '* **خون بہنا**: زخم پر صاف کپڑے سے مضبوطی سے دباؤ ڈالیں۔ اگر ممکن ہو تو زخم والے حصے کو دل کی سطح سے اونچا رکھیں۔\n'
           '* **ہڈی ٹوٹنا**: ٹوٹی ہوئی ہڈی کو ہلانے کی کوشش نہ کریں اور متاثرہ حصے کو ساکت رکھ کر مدد کا انتظار کریں۔\n'
@@ -260,7 +403,6 @@ class LocalLlmService {
           '  * **بینظیر بھٹو ہسپتال**: مری روڈ، راولپنڈی (📞 `051-9290301`)';
     }
 
-    // Default Fallback
     return 'ℹ️ **خبر آف لائن انٹیلی جنس کور (کوئی میچ نہیں ملا):**\n\n'
         'میں بیک اینڈ سرور سے منسلک ہوئے بغیر آف لائن کام کر رہا ہوں۔ مجھے آپ کا سوال موصول ہوا ہے، لیکن میرے آف لائن ڈیٹا بیس میں اس کا براہ راست جواب موجود نہیں۔\n\n'
         '🚨 **ہنگامی رابطے کے نمبرز:**\n'
@@ -271,7 +413,7 @@ class LocalLlmService {
   }
 
   // ════════════════════════════════════════════
-  // ROMAN URDU OFF-LINE RESPONSES
+  // ROMAN URDU OFF-LINE ADVISORIES
   // ════════════════════════════════════════════
   String _getRomanUrduResponse(String query, String sector) {
     if (_matches(query, ['hello', 'hi', 'salam', 'assalam', 'kon', 'khabar', 'start', 'shuru'])) {
@@ -352,7 +494,6 @@ class LocalLlmService {
           '  * **Benazir Bhutto Hospital**: Murree Road, Rawalpindi (📞 `051-9290301`)';
     }
 
-    // Default Fallback
     return 'ℹ️ **KHABAR Offline Intelligence Core (No Match):**\n\n'
         'Main server ke bina offline mode mein chal raha hoon. Mujhe aapka query mila hai par iska exact matching response offline database mein nahi hai.\n\n'
         '🚨 **Emergency Numbers:**\n'
@@ -362,9 +503,14 @@ class LocalLlmService {
         '_Salamat rahein, barish ke dauran ghar pe rahein aur flooded areas se door rahein._';
   }
 
-  // ════════════════════════════════════════════
-  // UTILITY METHODS
-  // ════════════════════════════════════════════
+  // Helper method to clear/dispose the LlamaParent instance manually
+  void dispose() {
+    if (_llamaParent != null) {
+      _llamaParent = null;
+      _isInitialized = false;
+    }
+  }
+
   bool _matches(String text, List<String> keywords) {
     for (var keyword in keywords) {
       if (text.contains(keyword)) {
