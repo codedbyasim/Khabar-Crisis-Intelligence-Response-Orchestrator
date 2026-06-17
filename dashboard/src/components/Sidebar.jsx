@@ -4,7 +4,6 @@ import {
   Map,
   Bot,
   Package,
-  Bell,
   ClipboardList,
   Settings
 } from 'lucide-react';
@@ -14,7 +13,6 @@ const NAV_ITEMS = [
   { id: 'map', label: 'Crisis Map', icon: Map },
   { id: 'agents', label: 'AI Agents', icon: Bot },
   { id: 'resources', label: 'Resources', icon: Package },
-  { id: 'alerts', label: 'Alerts', icon: Bell },
   { id: 'cases', label: 'Case Tracker', icon: ClipboardList },
 ];
 

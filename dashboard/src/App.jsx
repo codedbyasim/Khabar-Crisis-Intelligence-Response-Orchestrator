@@ -10,7 +10,6 @@ import MapWidget from './components/MapWidget';
 import AgentPanel from './components/AgentPanel';
 import SituationSummary from './components/SituationSummary';
 import ResourceManager from './components/ResourceManager';
-import AlertsPanel from './components/AlertsPanel';
 import CaseTracker from './components/CaseTracker';
 import Chatbot from './components/Chatbot';
 
@@ -210,7 +209,6 @@ export default function App() {
     map: 'Crisis Map',
     agents: 'AI Agents',
     resources: 'Resource Management',
-    alerts: 'Alerts & Warnings',
     cases: 'Case Tracker',
   };
 
@@ -403,11 +401,6 @@ export default function App() {
               apiBase={API_BASE}
               onResourceAdded={handleResourceAdded}
             />
-          )}
-
-          {/* ═══ ALERTS VIEW ═══ */}
-          {activeSection === 'alerts' && (
-            <AlertsPanel incidents={incidents} />
           )}
 
           {/* ═══ CASES VIEW ═══ */}
