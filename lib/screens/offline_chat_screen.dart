@@ -74,10 +74,24 @@ class _OfflineChatScreenState extends State<OfflineChatScreen> {
         });
       }
     } catch (e) {
+      // initModel() no longer rethrows library errors — this catch is for unexpected errors only.
+      // If we reach here, check if it's a native library error and fall back gracefully.
+      final errStr = e.toString().toLowerCase();
+      final isLibraryError = errStr.contains('libllama') ||
+          errStr.contains('dlopen') ||
+          errStr.contains('library') ||
+          errStr.contains('llamaexception');
+
       if (mounted) {
         setState(() {
-          _downloadError = 'Failed to load AI engine: $e';
           _isInitializingModel = false;
+          if (isLibraryError) {
+            // Don't show error — fallback to built-in offline knowledge base silently
+            _isModelReady = false;
+            _downloadError = '';
+          } else {
+            _downloadError = 'Failed to load AI engine: $e';
+          }
         });
       }
     }

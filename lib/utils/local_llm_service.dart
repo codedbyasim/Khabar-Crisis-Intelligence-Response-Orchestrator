@@ -152,28 +152,65 @@ class LocalLlmService {
 
       debugPrint("[LocalLlm] Initializing Llama Engine isolate with path: ${file.path}");
       
+      // ✅ Explicitly load native library based on platform
       if (Platform.isAndroid) {
-        Llama.libraryPath = "libllama.so";
+        debugPrint("[LocalLlm] Android detected - loading libllama.so");
+        try {
+          // Try to explicitly load the native library
+          // llama_cpp_dart will automatically resolve from APK's lib/arm64-v8a/ or lib/armeabi-v7a/
+          Llama.libraryPath = "libllama";  // Without .so - system will auto-append
+        } catch (e) {
+          debugPrint("[LocalLlm] Failed to set libraryPath: $e");
+        }
       } else if (Platform.isIOS) {
-        Llama.libraryPath = "llama.framework/llama";
+        debugPrint("[LocalLlm] iOS detected - loading llama.framework");
+        try {
+          Llama.libraryPath = "llama.framework/llama";
+        } catch (e) {
+          debugPrint("[LocalLlm] Failed to set iOS libraryPath: $e");
+        }
       }
 
+      // Create optimized model parameters for mobile
+      final modelParams = ModelParams();
+      final contextParams = ContextParams();
+      final samplingParams = SamplerParams();
+
+      debugPrint("[LocalLlm] Creating LlamaLoad with model: ${file.path}");
       final loadCommand = LlamaLoad(
         path: file.path,
-        modelParams: ModelParams(),
-        contextParams: ContextParams(),
-        samplingParams: SamplerParams(),
+        modelParams: modelParams,
+        contextParams: contextParams,
+        samplingParams: samplingParams,
       );
 
+      debugPrint("[LocalLlm] Initializing LlamaParent...");
       _llamaParent = LlamaParent(loadCommand);
       await _llamaParent!.init();
+      
       _isInitialized = true;
-      debugPrint("[LocalLlm] Llama Engine successfully initialized!");
+      debugPrint("[LocalLlm] ✅ Llama Engine successfully initialized!");
     } catch (e) {
-      await _deleteModelFile();
-      debugPrint("[LocalLlm] Failed to initialize local Llama: $e");
+      debugPrint("[LocalLlm] ❌ Initialization error: $e");
+      final errStr = e.toString().toLowerCase();
+      
+      // Check if this is a native library loading error
+      final isLibraryError = errStr.contains('libllama') ||
+          errStr.contains('dlopen') ||
+          errStr.contains('cannot find') ||
+          errStr.contains('library') ||
+          errStr.contains('llamaexception') ||
+          errStr.contains('failed to load');
+
+      if (isLibraryError) {
+        debugPrint("[LocalLlm] ⚠️  Native library not found - will use regex fallback");
+        // Don't delete file - library issue, not file issue
+      } else {
+        debugPrint("[LocalLlm] File corruption detected - will re-download");
+        await _deleteModelFile();
+      }
+
       _isInitialized = false;
-      rethrow;
     } finally {
       _isInitializing = false;
     }
@@ -182,46 +219,66 @@ class LocalLlmService {
   /// Streams generated response tokens from the on-device model isolate
   Stream<String> getOfflineResponseStream(String query) {
     if (!_isInitialized || _llamaParent == null) {
-      return Stream.value("Error: Local AI engine is not initialized.");
+      return Stream.error(Exception("Local AI engine is not initialized. Using regex fallback."));
     }
 
-    final controller = StreamController<String>();
-    
-    // ChatML prompt structure for Qwen2.5-Instruct
-    final prompt = "<|im_start|>system\n"
-        "You are Khabar Offline AI, a helpful emergency response assistant for Islamabad and Rawalpindi. "
-        "Keep responses extremely concise (2-3 sentences max), comforting, reassuring, and actionable. "
-        "Provide specific safety tips, emergency helplines, or instructions in the user's language.\n"
-        "<|im_end|>\n"
-        "<|im_start|>user\n"
-        "$query\n"
-        "<|im_end|>\n"
-        "<|im_start|>assistant\n";
+    return _generateTokenStream(query);
+  }
 
-    StreamSubscription<String>? subscription;
+  Stream<String> _generateTokenStream(String query) async* {
+    try {
+      // ChatML prompt structure for Qwen2.5-Instruct
+      final prompt = "<|im_start|>system\n"
+          "You are Khabar Offline AI, a helpful emergency response assistant for Islamabad and Rawalpindi. "
+          "Keep responses extremely concise (2-3 sentences max), comforting, reassuring, and actionable. "
+          "Provide specific safety tips, emergency helplines, or instructions in the user's language.\n"
+          "<|im_end|>\n"
+          "<|im_start|>user\n"
+          "$query\n"
+          "<|im_end|>\n"
+          "<|im_start|>assistant\n";
 
-    subscription = _llamaParent!.stream.listen(
-      (token) {
-        if (!controller.isClosed) {
-          if (token.contains("<|im_end|>") || token.contains("<|im_start|>")) {
-            controller.close();
-            subscription?.cancel();
-          } else {
-            controller.add(token);
-          }
+      debugPrint("[LocalLlm] Sending prompt to isolate...");
+
+      // Send prompt and wait for stream to start generating tokens
+      final tokenStream = _llamaParent!.stream;
+      _llamaParent!.sendPrompt(prompt);
+
+      var generationActive = false;
+      final maxWaitTime = Duration(seconds: 10);
+      final startTime = DateTime.now();
+
+      await for (final token in tokenStream) {
+        // Check if we've exceeded max wait time
+        if (DateTime.now().difference(startTime) > maxWaitTime) {
+          debugPrint("[LocalLlm] Inference timeout exceeded");
+          break;
         }
-      },
-      onError: (err) {
-        if (!controller.isClosed) controller.addError(err);
-      },
-      onDone: () {
-        if (!controller.isClosed) controller.close();
-      },
-      cancelOnError: true,
-    );
 
-    _llamaParent!.sendPrompt(prompt);
-    return controller.stream;
+        generationActive = true;
+
+        // Stop on end-of-sequence markers
+        if (token.contains("<|im_end|>") || token.contains("<|im_start|>")) {
+          debugPrint("[LocalLlm] End-of-sequence marker detected, stopping generation");
+          break;
+        }
+
+        // Skip empty tokens and control characters
+        if (token.isEmpty || token.codeUnits.every((code) => code < 32)) {
+          continue;
+        }
+
+        debugPrint("[LocalLlm] Token: '$token'");
+        yield token;
+      }
+
+      if (!generationActive) {
+        debugPrint("[LocalLlm] No tokens generated from model");
+      }
+    } catch (e) {
+      debugPrint("[LocalLlm] Stream generation error: $e");
+      throw Exception("Model inference failed: $e");
+    }
   }
 
   /// Synchronous fallback helper for backward compatibility and regex rule matchers
