@@ -9,8 +9,8 @@ export default function SituationSummary({ incidents }) {
   const p5 = incidents.filter(i => i.priority === 'P5').length;
   const total = incidents.length || 1;
 
-  const processing = incidents.filter(i => i.status === 'PROCESSING').length;
-  const complete = incidents.filter(i => i.status === 'PIPELINE_COMPLETE').length;
+  const processing = incidents.filter(i => i.status === 'PROCESSING' || i.status === 'OPEN' || i.status === 'EXECUTING' || i.status === 'IN_PROGRESS').length;
+  const complete = incidents.filter(i => i.status === 'PIPELINE_COMPLETE' || i.status === 'RESOLVED' || i.status === 'CLOSED').length;
   const review = incidents.filter(i => i.status === 'MANUAL_REVIEW_REQUIRED').length;
 
   // Determine overall threat level

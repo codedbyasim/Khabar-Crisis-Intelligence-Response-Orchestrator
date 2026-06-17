@@ -14,7 +14,7 @@ export default function StatsGrid({ incidents, resources, resourceSummary }) {
   const totalActive = incidents.length;
   
   const solvedCount = incidents.filter(i =>
-    i.status === 'PIPELINE_COMPLETE' || i.status === 'REJECTED'
+    i.status === 'PIPELINE_COMPLETE' || i.status === 'REJECTED' || i.status === 'RESOLVED' || i.status === 'CLOSED'
   ).length;
 
   const deployedResources = resources.filter(r =>

@@ -3,8 +3,8 @@ import { ClipboardList } from 'lucide-react';
 
 export default function CaseTracker({ incidents, selectedId, onSelectIncident }) {
   const totalCases = incidents.length;
-  const openCases = incidents.filter(i => i.status === 'PROCESSING' || i.status === 'OPEN').length;
-  const completeCases = incidents.filter(i => i.status === 'PIPELINE_COMPLETE').length;
+  const openCases = incidents.filter(i => i.status === 'PROCESSING' || i.status === 'OPEN' || i.status === 'EXECUTING' || i.status === 'IN_PROGRESS').length;
+  const completeCases = incidents.filter(i => i.status === 'PIPELINE_COMPLETE' || i.status === 'RESOLVED' || i.status === 'CLOSED').length;
   const reviewCases = incidents.filter(i => i.status === 'MANUAL_REVIEW_REQUIRED').length;
   const rejectedCases = incidents.filter(i => i.status === 'REJECTED').length;
   const resolvedCases = completeCases + rejectedCases;
@@ -22,9 +22,14 @@ export default function CaseTracker({ incidents, selectedId, onSelectIncident })
   const getStatusChipClass = (s) => {
     const map = {
       'PROCESSING': 'chip-processing',
+      'EXECUTING': 'chip-processing',
+      'IN_PROGRESS': 'chip-processing',
       'PIPELINE_COMPLETE': 'chip-complete',
+      'RESOLVED': 'chip-complete',
+      'CLOSED': 'chip-complete',
       'MANUAL_REVIEW_REQUIRED': 'chip-manual',
-      'OPEN': 'chip-open'
+      'OPEN': 'chip-open',
+      'REJECTED': 'chip-open'
     };
     return `status-chip ${map[s] || 'chip-open'}`;
   };

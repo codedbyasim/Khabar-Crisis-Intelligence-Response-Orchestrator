@@ -288,8 +288,8 @@ export default function App() {
                                   {inc.priority || 'P5'}
                                 </span>
                                 <span className={`status-chip ${
-                                  inc.status === 'PROCESSING' ? 'chip-processing' :
-                                  inc.status === 'PIPELINE_COMPLETE' ? 'chip-complete' :
+                                  (inc.status === 'PROCESSING' || inc.status === 'EXECUTING' || inc.status === 'IN_PROGRESS') ? 'chip-processing' :
+                                  (inc.status === 'PIPELINE_COMPLETE' || inc.status === 'RESOLVED' || inc.status === 'CLOSED') ? 'chip-complete' :
                                   inc.status === 'MANUAL_REVIEW_REQUIRED' ? 'chip-manual' : 'chip-open'
                                 }`}>
                                   {inc.status || 'UNKNOWN'}
@@ -355,8 +355,8 @@ export default function App() {
                                   {inc.priority || 'P5'}
                                 </span>
                                 <span className={`status-chip ${
-                                  inc.status === 'PROCESSING' ? 'chip-processing' :
-                                  inc.status === 'PIPELINE_COMPLETE' ? 'chip-complete' :
+                                  (inc.status === 'PROCESSING' || inc.status === 'EXECUTING' || inc.status === 'IN_PROGRESS') ? 'chip-processing' :
+                                  (inc.status === 'PIPELINE_COMPLETE' || inc.status === 'RESOLVED' || inc.status === 'CLOSED') ? 'chip-complete' :
                                   inc.status === 'MANUAL_REVIEW_REQUIRED' ? 'chip-manual' : 'chip-open'
                                 }`}>
                                   {inc.status || 'UNKNOWN'}
