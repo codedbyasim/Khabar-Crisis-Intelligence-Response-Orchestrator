@@ -14,7 +14,13 @@ class LocalLlmService {
   LocalLlmService._internal();
 
   static const String modelFileName = 'qwen2.5-0.5b-instruct-q4_k_m.gguf';
-  static const String modelDownloadUrl = 'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf';
+  static const List<String> _modelFileCandidates = [
+    modelFileName,
+    'Qwen2.5-0.5B-Instruct-Q4_K_M.gguf',
+    'qwen2.5-0.5b-instruct-q4_k_m.Q4_K_M.gguf',
+  ];
+  static const String modelDownloadUrl =
+      'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf';
   static const int _minimumModelBytes = 50 * 1024 * 1024;
 
   LlamaParent? _llamaParent;
@@ -23,9 +29,10 @@ class LocalLlmService {
 
   bool get isInitialized => _isInitialized;
 
-  /// Check if the model has already been downloaded onto device memory
+  /// Check if the model has already been downloaded onto device memory.
+  /// Supports the canonical name as well as common case/variant names.
   Future<bool> isModelDownloaded() async {
-    final file = await _getModelFile();
+    final file = await _resolveModelFile();
     if (!await file.exists()) return false;
 
     final size = await file.length();
@@ -37,12 +44,34 @@ class LocalLlmService {
     return File('${directory.path}/$modelFileName');
   }
 
+  Future<File?> _findExistingModelFile() async {
+    final directory = await getApplicationSupportDirectory();
+    for (final candidate in _modelFileCandidates) {
+      final file = File('${directory.path}/$candidate');
+      if (await file.exists()) {
+        return file;
+      }
+    }
+    return null;
+  }
+
+  Future<File> _resolveModelFile() async {
+    final existing = await _findExistingModelFile();
+    if (existing != null) {
+      return existing;
+    }
+    return _getModelFile();
+  }
+
   Future<void> _deleteModelFile() async {
-    final file = await _getModelFile();
-    if (await file.exists()) {
-      try {
-        await file.delete();
-      } catch (_) {}
+    final directory = await getApplicationSupportDirectory();
+    for (final candidate in _modelFileCandidates) {
+      final file = File('${directory.path}/$candidate');
+      if (await file.exists()) {
+        try {
+          await file.delete();
+        } catch (_) {}
+      }
     }
   }
 
@@ -50,7 +79,7 @@ class LocalLlmService {
   /// Supports HTTP Range-based resume: if a partial file exists, continues from where it left off.
   /// Retries up to 5 times with exponential backoff on connection failures.
   Stream<double> downloadModel() async* {
-    final file = await _getModelFile();
+    final file = await _resolveModelFile();
     await file.parent.create(recursive: true);
 
     const int maxRetries = 5;
@@ -67,12 +96,15 @@ class LocalLlmService {
         }
       }
 
-      debugPrint("[LocalLlm] Download attempt $attempt/$maxRetries (offset: $downloadedBytes bytes)");
+      debugPrint(
+        "[LocalLlm] Download attempt $attempt/$maxRetries (offset: $downloadedBytes bytes)",
+      );
       final client = http.Client();
       try {
         int totalBytes = 360000000;
         try {
-          final headResp = await client.head(Uri.parse(modelDownloadUrl))
+          final headResp = await client
+              .head(Uri.parse(modelDownloadUrl))
               .timeout(const Duration(seconds: 15));
           final cl = headResp.headers['content-length'];
           if (cl != null) totalBytes = int.parse(cl);
@@ -83,7 +115,8 @@ class LocalLlmService {
           request.headers['Range'] = 'bytes=$downloadedBytes-';
         }
 
-        final response = await client.send(request)
+        final response = await client
+            .send(request)
             .timeout(const Duration(seconds: 30));
 
         if (response.statusCode != 200 && response.statusCode != 206) {
@@ -139,7 +172,7 @@ class LocalLlmService {
     _isInitializing = true;
 
     try {
-      final file = await _getModelFile();
+      final file = await _resolveModelFile();
       if (!await file.exists()) {
         throw Exception("Model file not found. Download it first.");
       }
@@ -147,20 +180,36 @@ class LocalLlmService {
       final size = await file.length();
       if (size < _minimumModelBytes) {
         await _deleteModelFile();
-        throw Exception("Stored model file is incomplete. Please download it again.");
+        throw Exception(
+          "Stored model file is incomplete. Please download it again.",
+        );
       }
 
-      debugPrint("[LocalLlm] Initializing Llama Engine isolate with path: ${file.path}");
-      
+      debugPrint(
+        "[LocalLlm] Initializing Llama Engine isolate with path: ${file.path}",
+      );
+
       // ✅ Explicitly load native library based on platform
       if (Platform.isAndroid) {
-        debugPrint("[LocalLlm] Android detected - loading libllama.so");
-        try {
-          // Try to explicitly load the native library
-          // llama_cpp_dart will automatically resolve from APK's lib/arm64-v8a/ or lib/armeabi-v7a/
-          Llama.libraryPath = "libllama";  // Without .so - system will auto-append
-        } catch (e) {
-          debugPrint("[LocalLlm] Failed to set libraryPath: $e");
+        debugPrint(
+          "[LocalLlm] Android detected - trying common llama runtime names",
+        );
+        final androidLibraryCandidates = <String>["libllama.so", "libllama"];
+        bool libraryLoaded = false;
+        for (final candidate in androidLibraryCandidates) {
+          try {
+            Llama.libraryPath = candidate;
+            debugPrint("[LocalLlm] Using Android library path: $candidate");
+            libraryLoaded = true;
+            break;
+          } catch (e) {
+            debugPrint("[LocalLlm] Failed to set libraryPath '$candidate': $e");
+          }
+        }
+        if (!libraryLoaded) {
+          debugPrint(
+            "[LocalLlm] Could not set explicit library path; relying on default loader",
+          );
         }
       } else if (Platform.isIOS) {
         debugPrint("[LocalLlm] iOS detected - loading llama.framework");
@@ -187,15 +236,16 @@ class LocalLlmService {
       debugPrint("[LocalLlm] Initializing LlamaParent...");
       _llamaParent = LlamaParent(loadCommand);
       await _llamaParent!.init();
-      
+
       _isInitialized = true;
       debugPrint("[LocalLlm] ✅ Llama Engine successfully initialized!");
     } catch (e) {
       debugPrint("[LocalLlm] ❌ Initialization error: $e");
       final errStr = e.toString().toLowerCase();
-      
+
       // Check if this is a native library loading error
-      final isLibraryError = errStr.contains('libllama') ||
+      final isLibraryError =
+          errStr.contains('libllama') ||
           errStr.contains('dlopen') ||
           errStr.contains('cannot find') ||
           errStr.contains('library') ||
@@ -203,7 +253,9 @@ class LocalLlmService {
           errStr.contains('failed to load');
 
       if (isLibraryError) {
-        debugPrint("[LocalLlm] ⚠️  Native library not found - will use regex fallback");
+        debugPrint(
+          "[LocalLlm] ⚠️  Native library not found - will use regex fallback",
+        );
         // Don't delete file - library issue, not file issue
       } else {
         debugPrint("[LocalLlm] File corruption detected - will re-download");
@@ -219,7 +271,9 @@ class LocalLlmService {
   /// Streams generated response tokens from the on-device model isolate
   Stream<String> getOfflineResponseStream(String query) {
     if (!_isInitialized || _llamaParent == null) {
-      return Stream.error(Exception("Local AI engine is not initialized. Using regex fallback."));
+      return Stream.error(
+        Exception("Local AI engine is not initialized. Using regex fallback."),
+      );
     }
 
     return _generateTokenStream(query);
@@ -228,7 +282,8 @@ class LocalLlmService {
   Stream<String> _generateTokenStream(String query) async* {
     try {
       // ChatML prompt structure for Qwen2.5-Instruct
-      final prompt = "<|im_start|>system\n"
+      final prompt =
+          "<|im_start|>system\n"
           "You are Khabar Offline AI, a helpful emergency response assistant for Islamabad and Rawalpindi. "
           "Keep responses extremely concise (2-3 sentences max), comforting, reassuring, and actionable. "
           "Provide specific safety tips, emergency helplines, or instructions in the user's language.\n"
@@ -259,7 +314,9 @@ class LocalLlmService {
 
         // Stop on end-of-sequence markers
         if (token.contains("<|im_end|>") || token.contains("<|im_start|>")) {
-          debugPrint("[LocalLlm] End-of-sequence marker detected, stopping generation");
+          debugPrint(
+            "[LocalLlm] End-of-sequence marker detected, stopping generation",
+          );
           break;
         }
 
@@ -291,8 +348,9 @@ class LocalLlmService {
     if (_isInitialized) {
       try {
         final buffer = StringBuffer();
-        await for (final token in getOfflineResponseStream(query)
-            .timeout(const Duration(seconds: 8))) {
+        await for (final token in getOfflineResponseStream(
+          query,
+        ).timeout(const Duration(seconds: 8))) {
           buffer.write(token);
         }
 
@@ -309,7 +367,7 @@ class LocalLlmService {
     await Future.delayed(const Duration(milliseconds: 500));
     final String cleanQuery = query.toLowerCase().trim();
     String lang = detectLanguage(query);
-    
+
     if (selectedLanguage == 'اردو' || selectedLanguage == 'Urdu') {
       final RegExp urduRegExp = RegExp(r'[\u0600-\u06FF]');
       if (!urduRegExp.hasMatch(query) && cleanQuery.length > 2) {
@@ -343,14 +401,66 @@ class LocalLlmService {
     }
 
     final List<String> romanUrduKeywords = [
-      'kya', 'hai', 'hain', 'mein', 'batao', 'karo', 'se', 'ki', 'ko', 'pay', 'pe', 'bachein', 
-      'shuru', 'miley', 'ke', 'aur', 'ka', 'he', 'ye', 'yeh', 'kar', 'karen', 'karein', 'toh',
-      'raha', 'rahi', 'rahe', 'hoga', 'hogi', 'ap', 'aap', 'koe', 'koi', 'mujhe', 'mjhe', 'bhi',
-      'kuch', 'humein', 'hum', 'tha', 'thi', 'the', 'bhai', 'gari', 'gaadi', 'pani', 'paani',
-      'barish', 'baarish', 'nazar', 'chal', 'kr', 'rha', 'ha', 'rhy'
+      'kya',
+      'hai',
+      'hain',
+      'mein',
+      'batao',
+      'karo',
+      'se',
+      'ki',
+      'ko',
+      'pay',
+      'pe',
+      'bachein',
+      'shuru',
+      'miley',
+      'ke',
+      'aur',
+      'ka',
+      'he',
+      'ye',
+      'yeh',
+      'kar',
+      'karen',
+      'karein',
+      'toh',
+      'raha',
+      'rahi',
+      'rahe',
+      'hoga',
+      'hogi',
+      'ap',
+      'aap',
+      'koe',
+      'koi',
+      'mujhe',
+      'mjhe',
+      'bhi',
+      'kuch',
+      'humein',
+      'hum',
+      'tha',
+      'thi',
+      'the',
+      'bhai',
+      'gari',
+      'gaadi',
+      'pani',
+      'paani',
+      'barish',
+      'baarish',
+      'nazar',
+      'chal',
+      'kr',
+      'rha',
+      'ha',
+      'rhy',
     ];
 
-    final List<String> words = query.toLowerCase().split(RegExp(r'[\s\p{P}]+', unicode: true));
+    final List<String> words = query.toLowerCase().split(
+      RegExp(r'[\s\p{P}]+', unicode: true),
+    );
     int romanScore = 0;
     for (var word in words) {
       if (romanUrduKeywords.contains(word)) {
@@ -368,14 +478,34 @@ class LocalLlmService {
   // ENGLISH OFF-LINE ADVISORIES
   // ════════════════════════════════════════════
   String _getEnglishResponse(String query, String sector) {
-    if (_matches(query, ['hello', 'hi', 'salam', 'khabar', 'who are you', 'status', 'start'])) {
+    if (_matches(query, [
+      'hello',
+      'hi',
+      'salam',
+      'khabar',
+      'who are you',
+      'status',
+      'start',
+    ])) {
       return '👋 **Hello! I am KHABAR Client-Side Offline AI.**\n\n'
           'I am running 100% locally on your phone without requiring any internet or backend server connection.\n\n'
           'I can assist you with emergency numbers, flood safety, rain precautions, electrical safety, first aid, and gas leak guidelines for Islamabad & Rawalpindi.\n\n'
           '*How can I help you in this emergency?*';
     }
 
-    if (_matches(query, ['number', 'contact', 'phone', 'call', 'rescue', 'police', 'wasa', 'cda', 'helpline', 'ambulance', 'fire'])) {
+    if (_matches(query, [
+      'number',
+      'contact',
+      'phone',
+      'call',
+      'rescue',
+      'police',
+      'wasa',
+      'cda',
+      'helpline',
+      'ambulance',
+      'fire',
+    ])) {
       return '🚨 **Islamabad & Rawalpindi Emergency Helplines (Offline Database):**\n\n'
           '* **Rescue 1122** (Ambulance, Fire, Rescue): 📞 `1122` (Immediate emergency response)\n'
           '* **Police Emergency**: 📞 `15` (Call for security/law enforcement)\n'
@@ -385,7 +515,15 @@ class LocalLlmService {
           '_Keep these numbers saved on your phone. They do not require internet._';
     }
 
-    if (_matches(query, ['rain', 'storm', 'weather', 'monsoon', 'barish', 'mosam', 'cloudburst'])) {
+    if (_matches(query, [
+      'rain',
+      'storm',
+      'weather',
+      'monsoon',
+      'barish',
+      'mosam',
+      'cloudburst',
+    ])) {
       return '🌧️ **Monsoon & Heavy Rain Safety Advisory:**\n\n'
           '* **Stay Indoors**: Avoid non-essential outdoor travel during heavy downpours.\n'
           '* **Nullah Lai Alert**: WASA monitors Nullah Lai water levels. If it exceeds **18 feet**, an alert is issued. Stay away from Nullah Lai banks.\n'
@@ -393,7 +531,18 @@ class LocalLlmService {
           '* **Utility Outages**: Power cuts are common during rainstorms. Keep a flash light handy and charge your phone beforehand.';
     }
 
-    if (_matches(query, ['flood', 'lai', 'nullah', 'nala', 'water', 'sailab', 'pani', 'drowning', 'submerge', 'inundat'])) {
+    if (_matches(query, [
+      'flood',
+      'lai',
+      'nullah',
+      'nala',
+      'water',
+      'sailab',
+      'pani',
+      'drowning',
+      'submerge',
+      'inundat',
+    ])) {
       return '🌊 **Flood Emergency Action Plan:**\n\n'
           '* **Nullah Lai Danger**: Avoid traveling near Nullah Lai (Rawalpindi/Islamabad) when the water level rises past **18 feet**.\n'
           '* **Water Entering House**: If water enters your building:\n'
@@ -404,7 +553,15 @@ class LocalLlmService {
           '* **Emergency Dispatch**: Call Rescue **1122** for evacuation assistance.';
     }
 
-    if (_matches(query, ['safety', 'protect', 'rules', 'precaution', 'hifazat', 'tadabeer', 'prevent'])) {
+    if (_matches(query, [
+      'safety',
+      'protect',
+      'rules',
+      'precaution',
+      'hifazat',
+      'tadabeer',
+      'prevent',
+    ])) {
       return '🛡️ **Top 4 Emergency Safety Rules:**\n\n'
           '1. **Stay Indoors**: Avoid roads during lightning and heavy rainfall.\n'
           '2. **Electrical Hazard**: Never touch electric utility poles, transformers, or downed wires. They carry lethal currents.\n'
@@ -412,7 +569,18 @@ class LocalLlmService {
           '4. **Clean Drinking Water**: Floodwaters contaminate local supplies. Drink only boiled or clean bottled water to prevent cholera and other waterborne diseases.';
     }
 
-    if (_matches(query, ['electricity', 'shock', 'wire', 'pole', 'current', 'transformer', 'power', 'wapda', 'iesco', 'khamba'])) {
+    if (_matches(query, [
+      'electricity',
+      'shock',
+      'wire',
+      'pole',
+      'current',
+      'transformer',
+      'power',
+      'wapda',
+      'iesco',
+      'khamba',
+    ])) {
       return '⚡ **Electrical Shock & Power Grid Safety:**\n\n'
           '* **Downed Wires**: Treat all fallen wires as live and dangerous. Keep at least a 30-foot distance.\n'
           '* **Water Hazard**: Do not touch switches or electronic devices with wet hands, or while standing in standing water.\n'
@@ -423,7 +591,15 @@ class LocalLlmService {
           '  4. Call **1122** immediately for medical assistance.';
     }
 
-    if (_matches(query, ['gas', 'leak', 'sui gas', 'cylinder', 'explosion', 'fire', 'aag'])) {
+    if (_matches(query, [
+      'gas',
+      'leak',
+      'sui gas',
+      'cylinder',
+      'explosion',
+      'fire',
+      'aag',
+    ])) {
       return '🔥 **Gas Leak & Fire Safety Guide:**\n\n'
           '* **Gas Leak Detected**: If you smell gas inside your house:\n'
           '  1. Open all doors and windows immediately for ventilation.\n'
@@ -434,7 +610,18 @@ class LocalLlmService {
           '* **Active Fire**: Evacuate immediately. Call Fire Brigade: 📞 `16` or Rescue: 📞 `1122`.';
     }
 
-    if (_matches(query, ['first aid', 'medical', 'hospital', 'zakhmi', 'hurt', 'injury', 'pims', 'shifa', 'holy family', 'doctor'])) {
+    if (_matches(query, [
+      'first aid',
+      'medical',
+      'hospital',
+      'zakhmi',
+      'hurt',
+      'injury',
+      'pims',
+      'shifa',
+      'holy family',
+      'doctor',
+    ])) {
       return '🚑 **First Aid & Emergency Medical Guide:**\n\n'
           '* **Severe Bleeding**: Apply firm, direct pressure to the wound with a clean cloth. Elevate the injured area above heart level if possible.\n'
           '* **Fractures**: Do not try to move the broken bone. Keep the limb still and wait for help.\n'
@@ -459,14 +646,33 @@ class LocalLlmService {
   // URDU OFF-LINE ADVISORIES
   // ════════════════════════════════════════════
   String _getUrduResponse(String query, String sector) {
-    if (_matches(query, ['ہیلو', 'سلام', 'اسلام', 'کون', 'خبر', 'سٹارٹ', 'شروع'])) {
+    if (_matches(query, [
+      'ہیلو',
+      'سلام',
+      'اسلام',
+      'کون',
+      'خبر',
+      'سٹارٹ',
+      'شروع',
+    ])) {
       return '👋 **السلام علیکم! میں خبر آف لائن اے آئی اسسٹنٹ ہوں۔**\n\n'
           'میں آپ کے فون پر بغیر انٹرنیٹ اور بغیر بیک اینڈ سرور کے 100% مقامی طور پر کام کر رہا ہوں۔\n\n'
           'میں آپ کو ہنگامی نمبرز، سیلاب سے بچاؤ، بارش کی حفاظتی تدابیر، بجلی کی حفاظت، فرسٹ ایڈ اور گیس لیکج کے بارے میں معلومات فراہم کر سکتا ہوں۔\n\n'
           '*اس ہنگامی صورتحال میں، میں آپ کی کیا مدد کر سکتا ہوں؟*';
     }
 
-    if (_matches(query, ['نمبر', 'رابطہ', 'فون', 'کال', 'ریسکیو', 'پولیس', 'واسا', 'ہیلپ لائن', 'ایمبولینس', 'آگ'])) {
+    if (_matches(query, [
+      'نمبر',
+      'رابطہ',
+      'فون',
+      'کال',
+      'ریسکیو',
+      'پولیس',
+      'واسا',
+      'ہیلپ لائن',
+      'ایمبولینس',
+      'آگ',
+    ])) {
       return '🚨 **اسلام آباد اور راولپنڈی کے ہنگامی ہیلپ لائن نمبرز (آف لائن ڈیٹا بیس):**\n\n'
           '* **ریسکیو 1122** (ایمبولینس، فائر، ریسکیو): 📞 `1122` (فوری ہنگامی امداد)\n'
           '* **پولیس ایمرجنسی**: 📞 `15` (سیکیورٹی اور قانون نافذ کرنے والے ادارے)\n'
@@ -484,7 +690,16 @@ class LocalLlmService {
           '* **موبائل چارجنگ**: بارش کے دوران بجلی کی فراہمی معطل ہو سکتی ہے، اس لیے اپنے فونز اور ہنگامی لائٹس پہلے سے چارج رکھیں۔';
     }
 
-    if (_matches(query, ['سیلاب', 'پانی', 'ڈوبنا', 'نالہ', 'لئی', 'نالہ لئی', 'سیلابی', 'ڈوب'])) {
+    if (_matches(query, [
+      'سیلاب',
+      'پانی',
+      'ڈوبنا',
+      'نالہ',
+      'لئی',
+      'نالہ لئی',
+      'سیلابی',
+      'ڈوب',
+    ])) {
       return '🌊 **سیلاب کی صورتحال میں ہنگامی اقدامات:**\n\n'
           '* **نالہ لئی کا خطرہ**: راولپنڈی اور اسلام آباد میں نالہ لئی کے قریب جانے سے گریز کریں جب پانی کی سطح **18 فٹ** سے اوپر چلی جائے۔\n'
           '* **اگر گھر میں پانی داخل ہو جائے**:\n'
@@ -503,7 +718,16 @@ class LocalLlmService {
           '4. **صاف پانی**: سیلاب کے دوران پینے کا پانی آلودہ ہو جاتا ہے۔ بیماریوں سے بچنے کے لیے صرف ابلا ہوا پانی استعمال کریں۔';
     }
 
-    if (_matches(query, ['بجلی', 'کرنٹ', 'جھٹکا', 'تار', 'کھمبا', 'ٹرانسفارمر', 'واپڈا', 'آئیسکو'])) {
+    if (_matches(query, [
+      'بجلی',
+      'کرنٹ',
+      'جھٹکا',
+      'تار',
+      'کھمبا',
+      'ٹرانسفارمر',
+      'واپڈا',
+      'آئیسکو',
+    ])) {
       return '⚡ **بجلی کے خطرات اور حادثات سے بچاؤ:**\n\n'
           '* **ٹوٹے ہوئے تار**: سڑک پر گرے ہوئے تاروں کو چالو سمجھیں اور ان سے کم از کم 30 فٹ کا فاعدہ رکھیں۔\n'
           '* **گیلے ہاتھ**: گیلے ہاتھوں سے بجلی کے بورڈ، سوئچ یا آلات کو ہاتھ نہ لگائیں اور نہ ہی پانی میں کھڑے ہو کر ایسا کریں۔\n'
@@ -514,7 +738,15 @@ class LocalLlmService {
           '  4. فوری طبی امداد کے لیے **1122** پر کال کریں۔';
     }
 
-    if (_matches(query, ['گیس', 'لیک', 'سلنڈر', 'آگ', 'دھواں', 'دھماکہ', 'فائر'])) {
+    if (_matches(query, [
+      'گیس',
+      'لیک',
+      'سلنڈر',
+      'آگ',
+      'دھواں',
+      'دھماکہ',
+      'فائر',
+    ])) {
       return '🔥 **گیس لیکج اور آگ لگنے کی حفاظتی تدابیر:**\n\n'
           '* **گیس کی بو آنے پر**:\n'
           '  1. گھر کی کھڑکیاں اور دروازے فوری کھول دیں تاکہ گیس باہر نکل سکے۔\n'
@@ -525,7 +757,16 @@ class LocalLlmService {
           '* **آگ لگنے پر**: عمارت سے فوراً باہر نکلیں۔ لفٹ کا استعمال نہ کریں۔ اسلام آباد فائر بریگیڈ 📞 `16` یا ریسکیو 📞 `1122` پر کال کریں۔';
     }
 
-    if (_matches(query, ['زخمی', 'فرسٹ ایڈ', 'طبی', 'ہسبتال', 'چوٹ', 'پمز', 'شفا', 'ڈاکٹر'])) {
+    if (_matches(query, [
+      'زخمی',
+      'فرسٹ ایڈ',
+      'طبی',
+      'ہسبتال',
+      'چوٹ',
+      'پمز',
+      'شفا',
+      'ڈاکٹر',
+    ])) {
       return '🚑 **فرسٹ ایڈ اور ہنگامی طبی معلومات:**\n\n'
           '* **خون بہنا**: زخم پر صاف کپڑے سے مضبوطی سے دباؤ ڈالیں۔ اگر ممکن ہو تو زخم والے حصے کو دل کی سطح سے اونچا رکھیں۔\n'
           '* **ہڈی ٹوٹنا**: ٹوٹی ہوئی ہڈی کو ہلانے کی کوشش نہ کریں اور متاثرہ حصے کو ساکت رکھ کر مدد کا انتظار کریں۔\n'
@@ -550,14 +791,36 @@ class LocalLlmService {
   // ROMAN URDU OFF-LINE ADVISORIES
   // ════════════════════════════════════════════
   String _getRomanUrduResponse(String query, String sector) {
-    if (_matches(query, ['hello', 'hi', 'salam', 'assalam', 'kon', 'khabar', 'start', 'shuru'])) {
+    if (_matches(query, [
+      'hello',
+      'hi',
+      'salam',
+      'assalam',
+      'kon',
+      'khabar',
+      'start',
+      'shuru',
+    ])) {
       return '👋 **Assalam-o-Alaikum! Main KHABAR Offline AI Assistant hoon.**\n\n'
           'Main aapke phone pe bina internet aur bina server ke 100% locally chal raha hoon.\n\n'
           'Main aapko emergency numbers, flood safety, rain safety, electricity rules, first aid aur gas leaks ke baray mein bata sakta hoon.\n\n'
           '*Main is emergency mein aapki kya madad karoon?*';
     }
 
-    if (_matches(query, ['number', 'contact', 'phone', 'call', 'rescue', 'police', 'wasa', 'cda', 'helpline', 'ambulance', 'fire', 'aag'])) {
+    if (_matches(query, [
+      'number',
+      'contact',
+      'phone',
+      'call',
+      'rescue',
+      'police',
+      'wasa',
+      'cda',
+      'helpline',
+      'ambulance',
+      'fire',
+      'aag',
+    ])) {
       return '🚨 **Islamabad aur Rawalpindi Emergency Helplines (Offline Database):**\n\n'
           '* **Rescue 1122** (Ambulance, Fire, Rescue): 📞 `1122` (Fori emergency madad)\n'
           '* **Police Emergency**: 📞 `15` (Security ya police help ke liye)\n'
@@ -567,7 +830,16 @@ class LocalLlmService {
           '_Yeh emergency numbers apne phone mein save rakhein. Inke liye internet ki zaroorat nahi hai._';
     }
 
-    if (_matches(query, ['rain', 'storm', 'weather', 'monsoon', 'barish', 'mosam', 'cloudburst', 'toofan'])) {
+    if (_matches(query, [
+      'rain',
+      'storm',
+      'weather',
+      'monsoon',
+      'barish',
+      'mosam',
+      'cloudburst',
+      'toofan',
+    ])) {
       return '🌧️ **Barish aur Monsoon key safety rules:**\n\n'
           '* **Ghar pe rahein**: Tez barish aur bijli chamakne ke dauran bahar janay se parhez karein.\n'
           '* **Nullah Lai Alert**: WASA constantly monitor karta hai. Agar pani ka level **18 feet** se barhay to warning alert jari hota hai. Nullah Lai ke qareeb na jayein.\n'
@@ -575,7 +847,18 @@ class LocalLlmService {
           '* **Power cuts**: Barish mein bijli ja sakti hai, is liye lights aur phones pehle se charge rakhein.';
     }
 
-    if (_matches(query, ['flood', 'lai', 'nullah', 'nala', 'water', 'sailab', 'pani', 'drowning', 'doobna', 'flooding'])) {
+    if (_matches(query, [
+      'flood',
+      'lai',
+      'nullah',
+      'nala',
+      'water',
+      'sailab',
+      'pani',
+      'drowning',
+      'doobna',
+      'flooding',
+    ])) {
       return '🌊 **Flood Emergency Action Plan (Roman Urdu):**\n\n'
           '* **Nullah Lai Danger**: Rawalpindi aur Islamabad mein Nullah Lai ke qareeb na jayein agar pani ka level **18 feet** se oopar chala jaye.\n'
           '* **Agar Ghar mein Pani aa jaye**:\n'
@@ -586,7 +869,16 @@ class LocalLlmService {
           '* **Madad ke liye**: Foran **1122** par call karein.';
     }
 
-    if (_matches(query, ['safety', 'protect', 'rules', 'precaution', 'hifazat', 'tadabeer', 'prevent', 'bachao'])) {
+    if (_matches(query, [
+      'safety',
+      'protect',
+      'rules',
+      'precaution',
+      'hifazat',
+      'tadabeer',
+      'prevent',
+      'bachao',
+    ])) {
       return '🛡️ **Emergency ke 4 aham Hifazati Rules:**\n\n'
           '1. **Bahar na niklein**: Barish aur toofan ke dauran ghar pe rahein.\n'
           '2. **Bijli ke khambay**: Gire hue taar, transformers aur wet poles se door rahein. In mein lethal current ho sakta hai.\n'
@@ -594,7 +886,19 @@ class LocalLlmService {
           '4. **Saaf pani**: Floods ke dauran pani ganda ho jata hai. Bimarion se bachne ke liye sirf ubla hua ya filtered pani piyein.';
     }
 
-    if (_matches(query, ['electricity', 'shock', 'wire', 'pole', 'current', 'transformer', 'power', 'wapda', 'iesco', 'khamba', 'bijli'])) {
+    if (_matches(query, [
+      'electricity',
+      'shock',
+      'wire',
+      'pole',
+      'current',
+      'transformer',
+      'power',
+      'wapda',
+      'iesco',
+      'khamba',
+      'bijli',
+    ])) {
       return '⚡ **Bijli ke current aur shock se hifazat:**\n\n'
           '* **Gire hue taar**: Downed wires ko hamesha live aur dangerous samjhein, kam se kam 30 feet door rahein.\n'
           '* **Giley haath**: Giley hathon se ya pani mein khare ho kar electrical switches ya appliances ko haath na lagayein.\n'
@@ -605,7 +909,16 @@ class LocalLlmService {
           '  4. Ambulance ke liye foran **1122** call karein.';
     }
 
-    if (_matches(query, ['gas', 'leak', 'sui gas', 'cylinder', 'explosion', 'fire', 'aag', 'dhuman'])) {
+    if (_matches(query, [
+      'gas',
+      'leak',
+      'sui gas',
+      'cylinder',
+      'explosion',
+      'fire',
+      'aag',
+      'dhuman',
+    ])) {
       return '🔥 **Gas Leakage aur Fire Emergency guidelines:**\n\n'
           '* **Gas Leak smell aye to**:\n'
           '  1. Ghar ki khirkiyan aur darwaze foran khol dein taake gas bahar nikal sakay.\n'
@@ -616,7 +929,19 @@ class LocalLlmService {
           '* **Aag lagne par**: Building se foran bahar niklein. Lift use na karein. Islamabad Fire Brigade 📞 `16` ya Rescue 📞 `1122` call karein.';
     }
 
-    if (_matches(query, ['first aid', 'medical', 'hospital', 'zakhmi', 'hurt', 'injury', 'pims', 'shifa', 'holy family', 'doctor', 'chot'])) {
+    if (_matches(query, [
+      'first aid',
+      'medical',
+      'hospital',
+      'zakhmi',
+      'hurt',
+      'injury',
+      'pims',
+      'shifa',
+      'holy family',
+      'doctor',
+      'chot',
+    ])) {
       return '🚑 **First Aid aur Emergency Medical Guide:**\n\n'
           '* **Khoon behna (Bleeding)**: Zakham par clean cloth se pressure dein. Zakhmi hissay ko dil ki level se oopar rakhein taake bleeding kam ho.\n'
           '* **Hadi tootna (Fracture)**: Hadi ko seedha karne ya hilane ki koshish na karein, usay stable rakh kar ambulance ka wait karein.\n'

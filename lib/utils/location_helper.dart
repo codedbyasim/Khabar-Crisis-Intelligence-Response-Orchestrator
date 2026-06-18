@@ -38,42 +38,44 @@ class LocationHelper {
   }
 
   /// Attempts to fetch location.
-  /// 1. Tries GPS (last known then current)
-  /// 2. If GPS fails or times out, tries IP-based Geolocation.
-  /// 3. Falls back to getDefaultLocation().
+  /// 1. Tries a fresh GPS read first (not stale cached coordinates).
+  /// 2. If GPS fails or times out, uses the last known position only as a fallback.
+  /// 3. If GPS is unavailable, tries IP-based Geolocation.
+  /// 4. Falls back to getDefaultLocation().
   static Future<LocationResult> fetchLocation() async {
     // 1. Try GPS location (skip auto-fetch on Web as browser GPS might be wrong or blocked by CORS)
     if (!kIsWeb) {
       try {
-        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-        if (serviceEnabled) {
+        final bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (!serviceEnabled) {
+          debugPrint('[LocationHelper] GPS service is disabled.');
+        } else {
           LocationPermission permission = await Geolocator.checkPermission();
           if (permission == LocationPermission.denied) {
             permission = await Geolocator.requestPermission();
           }
+
           if (permission == LocationPermission.whileInUse ||
               permission == LocationPermission.always) {
-            // Try last known position first for instant lock
+            final position = await _getLivePosition();
+            if (position != null) {
+              debugPrint('[LocationHelper] Live GPS location succeeded: (${position.latitude}, ${position.longitude})');
+              return LocationResult(
+                position: LatLng(position.latitude, position.longitude),
+                isMockedOrOutside: !isInPakistan(position.latitude, position.longitude),
+                source: 'gps',
+              );
+            }
+
             final lastPosition = await Geolocator.getLastKnownPosition();
             if (lastPosition != null) {
-              debugPrint('[LocationHelper] GPS last known position succeeded: (${lastPosition.latitude}, ${lastPosition.longitude})');
+              debugPrint('[LocationHelper] GPS last known position used as fallback: (${lastPosition.latitude}, ${lastPosition.longitude})');
               return LocationResult(
                 position: LatLng(lastPosition.latitude, lastPosition.longitude),
                 isMockedOrOutside: !isInPakistan(lastPosition.latitude, lastPosition.longitude),
                 source: 'gps',
               );
             }
-
-            final position = await Geolocator.getCurrentPosition(
-              locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-            ).timeout(const Duration(seconds: 8));
-
-            debugPrint('[LocationHelper] GPS location succeeded: (${position.latitude}, ${position.longitude})');
-            return LocationResult(
-              position: LatLng(position.latitude, position.longitude),
-              isMockedOrOutside: !isInPakistan(position.latitude, position.longitude),
-              source: 'gps',
-            );
           }
         }
       } catch (e) {
@@ -99,6 +101,21 @@ class LocationHelper {
       isMockedOrOutside: true,
       source: 'default',
     );
+  }
+
+  static Future<Position?> _getLivePosition() async {
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.best,
+          timeLimit: Duration(seconds: 15),
+        ),
+      ).timeout(const Duration(seconds: 15));
+      return position;
+    } catch (e) {
+      debugPrint('[LocationHelper] Live GPS lookup failed: $e');
+      return null;
+    }
   }
 
   /// Fetches location using free IP Geolocation APIs

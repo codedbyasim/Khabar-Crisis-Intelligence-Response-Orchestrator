@@ -61,7 +61,7 @@ class MapScreen extends StatefulWidget {
 }
 
 class _MapScreenState extends State<MapScreen> {
-  late GoogleMapController mapController;
+  GoogleMapController? mapController;
   MapType _currentMapType = MapType.normal;
   final TextEditingController _searchController = TextEditingController();
 
@@ -112,6 +112,16 @@ class _MapScreenState extends State<MapScreen> {
             headingAccuracy: 0.0,
           );
         });
+
+        if (mapController != null && result.source == 'gps') {
+          await mapController!.animateCamera(
+            CameraUpdate.newLatLngZoom(
+              LatLng(result.position.latitude, result.position.longitude),
+              15,
+            ),
+          );
+        }
+
         debugPrint('[GPS] Map screen user location resolved to (${result.position.latitude}, ${result.position.longitude}) via source: ${result.source}');
       }
     } catch (e) {
@@ -358,8 +368,8 @@ class _MapScreenState extends State<MapScreen> {
 
     if (targetLatLng != null) {
       // Smoothly animate Google Map camera to the searched coordinate if online
-      if (ConnectivityService().value) {
-        mapController.animateCamera(
+      if (ConnectivityService().value && mapController != null) {
+        mapController!.animateCamera(
           CameraUpdate.newLatLngZoom(targetLatLng, 14.5),
         );
       }
